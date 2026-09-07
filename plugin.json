@@ -1,0 +1,22 @@
+{
+    "id": "pelican-gdrive-backup",
+    "name": "Google Drive Backup",
+    "author": "MrPanica",
+    "version": "1.0.1",
+    "description": "Streamed Google Drive backups and full system/server restore for Pelican Panel using rclone and zstd, optimized for Source Engine game servers.",
+    "category": "plugin",
+    "url": "https://github.com/MrPanica/pelican-gdrive-backup",
+    "update_url": "",
+    "namespace": "ProGamesZet\\GDriveBackup",
+    "class": "GDriveBackupPlugin",
+    "panels": [
+        "admin",
+        "server"
+    ],
+    "panel_version": null,
+    "composer_packages": null,
+    "meta": {
+        "status": "enabled",
+        "status_message": null
+    }
+}

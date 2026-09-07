@@ -1,0 +1,24 @@
+{
+    "name": "progameszet/pelican-gdrive-backup",
+    "description": "Streamed Google Drive backups and full system/server restore for Pelican Panel using rclone and zstd, optimized for Source Engine game servers.",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "MrPanica",
+            "email": "artur822000@gmail.com"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "ProGamesZet\\GDriveBackup\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "ProGamesZet\\GDriveBackup\\Providers\\GDriveBackupServiceProvider"
+            ]
+        }
+    }
+}
