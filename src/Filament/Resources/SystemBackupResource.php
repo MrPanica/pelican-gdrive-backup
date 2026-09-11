@@ -24,17 +24,17 @@ class SystemBackupResource extends Resource
 
     public static function getNavigationLabel(): string
     {
-        return 'Бэкапы всей системы';
+        return trans('gdrive-backup::messages.nav_label');
     }
 
     public static function getModelLabel(): string
     {
-        return 'Бэкап системы';
+        return trans('gdrive-backup::messages.model_label');
     }
 
     public static function getPluralModelLabel(): string
     {
-        return 'Бэкапы всей системы';
+        return trans('gdrive-backup::messages.plural_label');
     }
 
     public static function getNavigationGroup(): ?string
@@ -57,23 +57,23 @@ class SystemBackupResource extends Resource
             ->poll('5s')
             ->columns([
                 TextColumn::make('name')
-                    ->label('Имя архива')
+                    ->label(trans('gdrive-backup::messages.archive_name'))
                     ->searchable()
                     ->icon(TablerIcon::FileZip),
                 TextColumn::make('type')
-                    ->label('Тип')
-                    ->default('Полный снимок VDS')
+                    ->label(trans('gdrive-backup::messages.type'))
+                    ->default(trans('gdrive-backup::messages.full_snapshot'))
                     ->badge()
                     ->color('info'),
                 TextColumn::make('size_formatted')
-                    ->label('Размер')
+                    ->label(trans('gdrive-backup::messages.size'))
                     ->badge(fn ($record) => $record->status === 'InProgress')
                     ->color(fn ($record) => $record->status === 'InProgress' ? 'warning' : 'gray'),
                 TextColumn::make('date')
-                    ->label('Дата создания')
+                    ->label(trans('gdrive-backup::messages.created_date'))
                     ->sortable(),
                 TextColumn::make('status')
-                    ->label('Статус')
+                    ->label(trans('gdrive-backup::messages.status'))
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
                         'InProgress' => 'warning',
@@ -88,25 +88,25 @@ class SystemBackupResource extends Resource
                         default => null,
                     })
                     ->formatStateUsing(fn (string $state): string => match ($state) {
-                        'InProgress' => 'В процессе...',
-                        'Completed' => 'Готов к восстановлению',
-                        'Failed' => 'Ошибка',
+                        'InProgress' => trans('gdrive-backup::messages.status_in_progress'),
+                        'Completed' => trans('gdrive-backup::messages.status_completed'),
+                        'Failed' => trans('gdrive-backup::messages.status_failed'),
                         default => $state,
                     }),
             ])
             ->recordActions([
                 Action::make('restore_system')
-                    ->label('Восстановить')
+                    ->label(trans('gdrive-backup::messages.restore'))
                     ->icon(TablerIcon::CloudDownload)
                     ->color('danger')
                     ->visible(fn (SystemBackup $record) => $record->status === 'Completed')
-                    ->modalHeading(fn (SystemBackup $record) => "Восстановление системы из архива {$record->name}")
-                    ->modalDescription('ВНИМАНИЕ! Будет выполнено восстановление системных файлов и конфигураций игрового VDS. Для защиты от случайного восстановления введите RESTORE.')
-                    ->modalSubmitActionLabel('Начать восстановление')
+                    ->modalHeading(fn (SystemBackup $record) => trans('gdrive-backup::messages.restore_confirm_title', ['name' => $record->name]))
+                    ->modalDescription(trans('gdrive-backup::messages.restore_confirm_desc'))
+                    ->modalSubmitActionLabel(trans('gdrive-backup::messages.restore_submit'))
                     ->schema([
                         TextInput::make('confirmation')
-                            ->label('Подтверждение операции')
-                            ->placeholder('Введите RESTORE')
+                            ->label(trans('gdrive-backup::messages.restore_confirm_input'))
+                            ->placeholder(trans('gdrive-backup::messages.restore_confirm_placeholder'))
                             ->required()
                             ->rules(['in:RESTORE']),
                     ])
@@ -115,27 +115,27 @@ class SystemBackupResource extends Resource
                         $service->triggerSystemRestore($record->name);
 
                         Notification::make()
-                            ->title('Восстановление системы запущено')
-                            ->body("Процесс восстановления из {$record->name} выполняется на игровой ноде.")
+                            ->title(trans('gdrive-backup::messages.system_restore_started_title'))
+                            ->body(trans('gdrive-backup::messages.system_restore_started_body', ['name' => $record->name]))
                             ->success()
                             ->send();
                     }),
 
                 Action::make('delete_system')
-                    ->label('Удалить')
+                    ->label(trans('gdrive-backup::messages.delete'))
                     ->icon(TablerIcon::Trash)
                     ->color('danger')
                     ->requiresConfirmation()
-                    ->modalHeading(fn (SystemBackup $record) => "Удаление архива {$record->name}")
-                    ->modalDescription('Вы действительно хотите удалить этот архив с Google Диска?')
-                    ->modalSubmitActionLabel('Удалить с Google Диска')
+                    ->modalHeading(fn (SystemBackup $record) => trans('gdrive-backup::messages.delete_confirm_title', ['name' => $record->name]))
+                    ->modalDescription(trans('gdrive-backup::messages.delete_confirm_desc'))
+                    ->modalSubmitActionLabel(trans('gdrive-backup::messages.delete_submit'))
                     ->action(function (SystemBackup $record) {
                         $service = app(GDriveBackupService::class);
                         $service->deleteSystemBackup($record->name);
 
                         Notification::make()
-                            ->title('Архив удален')
-                            ->body("Архив {$record->name} успешно удален с Google Диска.")
+                            ->title(trans('gdrive-backup::messages.archive_deleted_title'))
+                            ->body(trans('gdrive-backup::messages.archive_deleted_body', ['name' => $record->name]))
                             ->success()
                             ->send();
                     }),
@@ -144,26 +144,26 @@ class SystemBackupResource extends Resource
                 GDriveBackupPlugin::getDiagnosticTestAction(),
 
                 Action::make('create_system_backup')
-                    ->label('Создать полный бэкап системы')
+                    ->label(trans('gdrive-backup::messages.create_system_backup'))
                     ->icon(TablerIcon::BrandGoogleDrive)
                     ->color('primary')
                     ->requiresConfirmation()
-                    ->modalHeading('Создание полного бэкапа VDS на Google Диск')
-                    ->modalDescription('Запустить потоковое резервное копирование всей системы на Google Диск прямо сейчас?')
-                    ->modalSubmitActionLabel('Создать бэкап')
+                    ->modalHeading(trans('gdrive-backup::messages.create_backup_modal_title'))
+                    ->modalDescription(trans('gdrive-backup::messages.create_backup_modal_desc'))
+                    ->modalSubmitActionLabel(trans('gdrive-backup::messages.create_backup_submit'))
                     ->action(function () {
                         $service = app(GDriveBackupService::class);
                         $filename = $service->triggerSystemBackup(true);
 
                         Notification::make()
-                            ->title('Бэкап системы запущен')
-                            ->body("Создание архива {$filename} выполняется в фоновом режиме. Статус отображается в списке.")
+                            ->title(trans('gdrive-backup::messages.system_backup_started_title'))
+                            ->body(trans('gdrive-backup::messages.system_backup_started_body', ['name' => $filename]))
                             ->success()
                             ->send();
                     }),
 
                 Action::make('refresh_system_list')
-                    ->label('Обновить список')
+                    ->label(trans('gdrive-backup::messages.refresh_list'))
                     ->icon(TablerIcon::Refresh)
                     ->color('gray')
                     ->action(function () {
@@ -171,14 +171,14 @@ class SystemBackupResource extends Resource
                         \Illuminate\Support\Facades\Cache::forget('gdrive_active_backup_status');
 
                         Notification::make()
-                            ->title('Список обновлен')
-                            ->body('Данные успешно синхронизированы с Google Диском.')
+                            ->title(trans('gdrive-backup::messages.list_refreshed_title'))
+                            ->body(trans('gdrive-backup::messages.list_refreshed_body'))
                             ->success()
                             ->send();
                     }),
             ])
-            ->emptyStateHeading('Архивы системы не найдены')
-            ->emptyStateDescription('На Google Диске в папке TF2_Backups/System пока нет созданных резервных копий.')
+            ->emptyStateHeading(trans('gdrive-backup::messages.empty_heading'))
+            ->emptyStateDescription(trans('gdrive-backup::messages.empty_description'))
             ->emptyStateIcon(TablerIcon::Server);
     }
 

@@ -45,13 +45,13 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
     public static function getDiagnosticTestAction(): Action
     {
         return Action::make('gdrive_diagnostic_test')
-            ->label('Запустить тест Google Диска')
+            ->label(trans('gdrive-backup::messages.diag_btn_label'))
             ->icon(TablerIcon::PlayerPlay)
             ->color('info')
-            ->modalHeading('Тестирование и диагностика Google Диска (в реальном времени)')
-            ->modalDescription('Интерактивная сквозная проверка всех этапов: связь по SSH, утилиты ноды, авторизация Google Диска, создание архива, сжатие zstd, загрузка на Google Диск, скачивание обратно, разархивация и сверка целостности SHA-256.')
+            ->modalHeading(trans('gdrive-backup::messages.diag_modal_title'))
+            ->modalDescription(trans('gdrive-backup::messages.diag_modal_desc'))
             ->modalSubmitAction(false)
-            ->modalCancelActionLabel('Закрыть')
+            ->modalCancelActionLabel(trans('gdrive-backup::messages.diag_close'))
             ->schema(function () {
                 $service = app(GDriveBackupService::class);
                 $cached = Cache::get('gdrive_last_diagnostic_result');
@@ -83,21 +83,21 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
                     static::getDiagnosticTestAction(),
 
                     Action::make('gdrive_system_backups_link')
-                        ->label('Все бэкапы системы')
+                        ->label(trans('gdrive-backup::messages.plural_label'))
                         ->icon(TablerIcon::Server)
                         ->color('info')
                         ->url(fn () => SystemBackupResource::getUrl()),
 
                     Action::make('gdrive_system_restore')
-                        ->label('Восстановление всей системы')
+                        ->label(trans('gdrive-backup::messages.restore'))
                         ->icon(TablerIcon::CloudDownload)
                         ->color('danger')
-                        ->modalHeading('Восстановление всей системы (VDS) с Google Диска')
-                        ->modalDescription('ВНИМАНИЕ! Будет выполнено восстановление системных файлов и конфигураций игрового VDS из выбранного полного снимка на Google Диске.')
-                        ->modalSubmitActionLabel('Начать восстановление системы')
+                        ->modalHeading(trans('gdrive-backup::messages.restore_confirm_desc'))
+                        ->modalDescription(trans('gdrive-backup::messages.restore_confirm_desc'))
+                        ->modalSubmitActionLabel(trans('gdrive-backup::messages.restore_submit'))
                         ->schema([
                             Select::make('backup_file')
-                                ->label('Архив системы на Google Диске')
+                                ->label(trans('gdrive-backup::messages.archive_name'))
                                 ->required()
                                 ->searchable()
                                 ->options(function () {
@@ -106,45 +106,43 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
                                     $opts = [];
                                     foreach ($backups as $b) {
                                         if (($b['status'] ?? '') === 'Completed') {
-                                            $opts[$b['name']] = "{$b['name']} ({$b['size_formatted']}, {$b['date']})";
+                                             $opts[$b['name']] = "{$b['name']} ({$b['size_formatted']}, {$b['date']})";
                                         }
                                     }
                                     return $opts;
-                                })
-                                ->helperText('Выберите точку восстановления системы из папки TF2_Backups/System'),
+                                }),
                             TextInput::make('confirmation')
-                                ->label('Подтверждение операции')
-                                ->placeholder('Введите RESTORE')
+                                ->label(trans('gdrive-backup::messages.restore_confirm_input'))
+                                ->placeholder(trans('gdrive-backup::messages.restore_confirm_placeholder'))
                                 ->required()
-                                ->rules(['in:RESTORE'])
-                                ->helperText('Для защиты от случайного восстановления введите слово RESTORE большими буквами'),
+                                ->rules(['in:RESTORE']),
                         ])
                         ->action(function (array $data) {
                             $service = app(GDriveBackupService::class);
                             $service->triggerSystemRestore($data['backup_file']);
 
                             Notification::make()
-                                ->title('Восстановление системы запущено')
-                                ->body("Запущен процесс восстановления из архива {$data['backup_file']}. Процесс выполняется на игровой ноде.")
+                                ->title(trans('gdrive-backup::messages.system_restore_started_title'))
+                                ->body(trans('gdrive-backup::messages.system_restore_started_body', ['name' => $data['backup_file']]))
                                 ->success()
                                 ->send();
                         }),
 
                     Action::make('gdrive_system_backup')
-                        ->label('Бэкап всей системы (GDrive)')
+                        ->label(trans('gdrive-backup::messages.create_system_backup'))
                         ->icon(TablerIcon::BrandGoogleDrive)
                         ->color('primary')
                         ->requiresConfirmation()
-                        ->modalHeading('Создание полного бэкапа VDS')
-                        ->modalDescription('Запустить немедленное потоковое резервное копирование всей системы на Google Диск? Серверы продолжат работать в штатном режиме.')
-                        ->modalSubmitActionLabel('Запустить бэкап')
+                        ->modalHeading(trans('gdrive-backup::messages.create_backup_modal_title'))
+                        ->modalDescription(trans('gdrive-backup::messages.create_backup_modal_desc'))
+                        ->modalSubmitActionLabel(trans('gdrive-backup::messages.create_backup_submit'))
                         ->action(function () {
                             $service = app(GDriveBackupService::class);
                             $filename = $service->triggerSystemBackup(true);
 
                             Notification::make()
-                                ->title('Бэкап системы запущен')
-                                ->body("Создание полного образа {$filename} выполняется в фоновом режиме.")
+                                ->title(trans('gdrive-backup::messages.system_backup_started_title'))
+                                ->body(trans('gdrive-backup::messages.system_backup_started_body', ['name' => $filename]))
                                 ->success()
                                 ->send();
                         }),
@@ -167,53 +165,53 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
                     ->poll('5s')
                     ->pushColumns([
                         TextColumn::make('backupHost.name')
-                            ->label('Хранилище')
+                            ->label(trans('gdrive-backup::messages.storage'))
                             ->badge()
                             ->color(fn ($state) => $state === 'Google Drive' ? 'primary' : 'gray'),
                         TextColumn::make('created_at_formatted')
-                            ->label('Точная дата')
+                            ->label(trans('gdrive-backup::messages.exact_date'))
                             ->state(fn (Backup $record) => ($record->completed_at ?: $record->created_at)?->format('d.m.Y H:i:s'))
                             ->sortable(query: fn ($query, $direction) => $query->orderBy('created_at', $direction)),
                     ])
                     ->pushRecordActions([
                         Action::make('restore_gdrive')
-                            ->label('Восстановить с GDrive')
+                            ->label(trans('gdrive-backup::messages.restore_from_gdrive'))
                             ->icon(TablerIcon::CloudDownload)
                             ->color('warning')
                             ->visible(fn (Backup $record) => $record->backupHost?->schema === 'gdrive' && $record->status === BackupStatus::Successful)
                             ->requiresConfirmation()
-                            ->modalHeading(fn (Backup $record) => "Восстановление сервера из {$record->name}")
-                            ->modalDescription('Восстановить файлы сервера из этого архива на Google Диске? Сервер будет обновлен.')
-                            ->modalSubmitActionLabel('Восстановить')
+                            ->modalHeading(fn (Backup $record) => trans('gdrive-backup::messages.server_restore_title', ['name' => $record->name]))
+                            ->modalDescription(trans('gdrive-backup::messages.server_restore_desc'))
+                            ->modalSubmitActionLabel(trans('gdrive-backup::messages.restore'))
                             ->action(function (Backup $record) {
                                 $service = app(GDriveBackupService::class);
                                 $container = $service->detectContainerName($record->server);
                                 $service->triggerServerRestore($container, $record->name);
 
                                 Notification::make()
-                                    ->title('Восстановление запущено')
-                                    ->body("Сервер {$container} восстанавливается из архива {$record->name}.")
+                                    ->title(trans('gdrive-backup::messages.server_restore_started_title'))
+                                    ->body(trans('gdrive-backup::messages.server_restore_started_body', ['container' => $container, 'name' => $record->name]))
                                     ->success()
                                     ->send();
                             }),
 
                         Action::make('delete_gdrive')
-                            ->label('Удалить с GDrive')
+                            ->label(trans('gdrive-backup::messages.delete_from_gdrive'))
                             ->icon(TablerIcon::Trash)
                             ->color('danger')
                             ->visible(fn (Backup $record) => $record->backupHost?->schema === 'gdrive')
                             ->requiresConfirmation()
-                            ->modalHeading(fn (Backup $record) => "Удаление архива {$record->name}")
-                            ->modalDescription('Вы действительно хотите удалить этот архив с Google Диска?')
-                            ->modalSubmitActionLabel('Удалить')
+                            ->modalHeading(fn (Backup $record) => trans('gdrive-backup::messages.server_delete_title', ['name' => $record->name]))
+                            ->modalDescription(trans('gdrive-backup::messages.server_delete_desc'))
+                            ->modalSubmitActionLabel(trans('gdrive-backup::messages.delete'))
                             ->action(function (Backup $record) {
                                 $name = $record->name;
                                 $service = app(GDriveBackupService::class);
                                 $service->deleteServerBackup($record);
 
                                 Notification::make()
-                                    ->title('Бэкап удален')
-                                    ->body("Архив {$name} успешно удален с Google Диска.")
+                                    ->title(trans('gdrive-backup::messages.server_backup_deleted_title'))
+                                    ->body(trans('gdrive-backup::messages.server_backup_deleted_body', ['name' => $name]))
                                     ->success()
                                     ->send();
                             }),
@@ -222,13 +220,13 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
                         static::getDiagnosticTestAction(),
 
                         Action::make('gdrive_server_backup')
-                            ->label('Бэкап на Google Диск')
+                            ->label(trans('gdrive-backup::messages.backup_to_gdrive'))
                             ->icon(TablerIcon::BrandGoogleDrive)
                             ->color('primary')
                             ->requiresConfirmation()
-                            ->modalHeading('Бэкап сервера на Google Диск')
-                            ->modalDescription('Создать резервную копию данного игрового сервера и отправить в потоке на Google Диск? Запись сразу появится в списке.')
-                            ->modalSubmitActionLabel('Создать бэкап')
+                            ->modalHeading(trans('gdrive-backup::messages.server_backup_modal_title'))
+                            ->modalDescription(trans('gdrive-backup::messages.server_backup_modal_desc'))
+                            ->modalSubmitActionLabel(trans('gdrive-backup::messages.create_backup_submit'))
                             ->action(function () {
                                 /** @var Server $server */
                                 $server = Filament::getTenant();
@@ -236,14 +234,14 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
                                 $backup = $service->createServerBackup($server);
 
                                 Notification::make()
-                                    ->title('Создание бэкапа запущено')
-                                    ->body("Архив {$backup->name} создается и отправляется на Google Диск. Статус отображается в списке.")
+                                    ->title(trans('gdrive-backup::messages.server_backup_started_title'))
+                                    ->body(trans('gdrive-backup::messages.server_backup_started_body', ['name' => $backup->name]))
                                     ->success()
                                     ->send();
                             }),
 
                         Action::make('gdrive_sync')
-                            ->label('Синхронизировать Google Диск')
+                            ->label(trans('gdrive-backup::messages.sync_gdrive'))
                             ->icon(TablerIcon::Refresh)
                             ->color('gray')
                             ->action(function () {
@@ -254,8 +252,8 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
                                 }
 
                                 Notification::make()
-                                    ->title('Синхронизация завершена')
-                                    ->body('Список резервных копий с Google Диска успешно обновлен.')
+                                    ->title(trans('gdrive-backup::messages.sync_completed_title'))
+                                    ->body(trans('gdrive-backup::messages.sync_completed_body'))
                                     ->success()
                                     ->send();
                             }),
@@ -299,7 +297,9 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
     {
         return [
             Section::make('Проверка и тестирование Google Диска')
-                ->description('Сквозное тестирование цепочки бэкапа: выгрузка архива, скачивание обратно, разархивация и побитовая сверка целостности SHA-256 в реальном времени')
+        return [
+            Section::make(trans('gdrive-backup::messages.settings_diag_section'))
+                ->description(trans('gdrive-backup::messages.settings_diag_desc'))
                 ->schema([
                     Placeholder::make('diag_status_view')
                         ->hiddenLabel()
@@ -310,118 +310,93 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
                         }),
                 ]),
 
-            Section::make('Параметры хранилища Google Диск')
+            Section::make(trans('gdrive-backup::messages.settings_storage_section'))
                 ->schema([
                     TextInput::make('remote')
-                        ->label('Имя пульта rclone (Google Drive remote)')
+                        ->label(trans('gdrive-backup::messages.settings_remote_label'))
                         ->default('gdrive')
                         ->required()
                         ->helperText(new HtmlString(
-                            'Имя настроенного в rclone подключения к Google Диску (по умолчанию <code>gdrive</code>).<br>' .
-                            '• Справка по настройке rclone: <a href="https://rclone.org/drive/" target="_blank" style="color:#2563eb;text-decoration:underline;">Документация rclone Google Drive</a><br>' .
-                            '• 1. Включить Google Drive API: <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" style="color:#2563eb;text-decoration:underline;">Google API Library</a><br>' .
-                            '• 2. Создать Client ID / Secret: <a href="https://console.cloud.google.com/auth/clients" target="_blank" style="color:#2563eb;text-decoration:underline;">Google Auth Platform (Clients)</a>'
+                            '• rclone Google Drive: <a href="https://rclone.org/drive/" target="_blank" style="color:#2563eb;text-decoration:underline;">rclone docs</a><br>' .
+                            '• 1. <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" style="color:#2563eb;text-decoration:underline;">Google Drive API Library</a><br>' .
+                            '• 2. <a href="https://console.cloud.google.com/auth/clients" target="_blank" style="color:#2563eb;text-decoration:underline;">Google Auth Platform (Clients)</a>'
                         )),
                     TextInput::make('folder')
-                        ->label('Корневая папка на Google Диске')
+                        ->label(trans('gdrive-backup::messages.settings_folder_label'))
                         ->default('TF2_Backups')
                         ->required()
                         ->helperText(new HtmlString(
-                            'Папка на вашем Google Диске, в которой хранятся резервные копии.<br>' .
-                            '• Открыть или создать папку: <a href="https://drive.google.com/drive/my-drive" target="_blank" style="color:#2563eb;text-decoration:underline;">Google Диск (Мой диск)</a>'
+                            '• <a href="https://drive.google.com/drive/my-drive" target="_blank" style="color:#2563eb;text-decoration:underline;">Google Drive (My Drive)</a>'
                         )),
                     TextInput::make('retention_days')
-                        ->label('Срок хранения бэкапов (в днях)')
+                        ->label(trans('gdrive-backup::messages.settings_retention_label'))
                         ->numeric()
                         ->default(14)
                         ->helperText(new HtmlString(
-                            'Количество дней хранения архивов. Старые архивы автоматически очищаются при создании нового бэкапа.<br>' .
-                            '• Управление корзиной Google Диска: <a href="https://drive.google.com/drive/trash" target="_blank" style="color:#2563eb;text-decoration:underline;">Корзина Google Drive</a>'
+                            '• <a href="https://drive.google.com/drive/trash" target="_blank" style="color:#2563eb;text-decoration:underline;">Google Drive Trash</a>'
                         )),
                 ])->columns(3),
 
-            Section::make('Подключение к игровой ноде (Node Connection)')
-                ->description('Параметры SSH подключения панели управления к игровой ноде для выполнения бэкапов')
+            Section::make(trans('gdrive-backup::messages.settings_node_section'))
+                ->description(trans('gdrive-backup::messages.settings_node_desc'))
                 ->schema([
                     TextInput::make('node_host')
-                        ->label('IP адрес / хост ноды')
+                        ->label(trans('gdrive-backup::messages.settings_node_host'))
                         ->default('87.228.56.213')
                         ->required()
-                        ->helperText('IP адрес сервера ноды (для Node 2: <code>87.228.56.213</code>)'),
+                        ->helperText('Node IP (e.g. <code>87.228.56.213</code>)'),
                     TextInput::make('node_port')
-                        ->label('SSH порт ноды')
+                        ->label(trans('gdrive-backup::messages.settings_node_port'))
                         ->numeric()
                         ->default(228)
                         ->required()
-                        ->helperText('Пользовательский порт SSH ноды (для Node 2: <code>228</code>)'),
+                        ->helperText('SSH port (e.g. <code>228</code>)'),
                     TextInput::make('node_user')
-                        ->label('SSH пользователь')
+                        ->label(trans('gdrive-backup::messages.settings_node_user'))
                         ->default('root')
                         ->required()
-                        ->helperText('Пользователь SSH с правами root'),
+                        ->helperText('SSH user with root privileges'),
                     TextInput::make('node_key_path')
-                        ->label('Путь к SSH ключу на веб-сервере')
+                        ->label(trans('gdrive-backup::messages.settings_node_key_path'))
                         ->default('/var/www/.ssh/id_ed25519')
                         ->required()
-                        ->helperText('Путь к приватному ключу (по умолчанию <code>/var/www/.ssh/id_ed25519</code>)'),
+                        ->helperText('SSH private key path (e.g. <code>/var/www/.ssh/id_ed25519</code>)'),
                 ])->columns(4),
 
-            Section::make('Авторизация Google Drive (Обновление OAuth токена)')
-                ->description('Быстрое обновление токена Google Drive без необходимости ручной правки rclone.conf на сервере ноды')
+            Section::make(trans('gdrive-backup::messages.settings_token_section'))
+                ->description(trans('gdrive-backup::messages.settings_token_desc'))
                 ->schema([
                     Textarea::make('update_token')
-                        ->label('Новый OAuth токен Google Drive (JSON)')
+                        ->label(trans('gdrive-backup::messages.settings_token_label'))
                         ->rows(4)
                         ->placeholder('{"access_token":"...","token_type":"Bearer","refresh_token":"...","expiry":"..."}')
                         ->helperText(new HtmlString(
                             '<div style="line-height:1.7;font-size:12px;">' .
-                            '<b style="color:#38bdf8;">Актуальная пошаговая инструкция Google Auth Platform (2026):</b><br>' .
-                            '<b>Шаг 1.</b> Включите API: перейдите в <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" style="color:#2563eb;text-decoration:underline;">Google Drive API</a> и нажмите <b>Enable (Включить)</b>.<br>' .
-                            '<b>Шаг 2.</b> Оформление приложения: перейдите в <a href="https://console.cloud.google.com/auth/branding" target="_blank" style="color:#2563eb;text-decoration:underline;">Google Auth Platform ➔ Branding</a>. Заполните обязательные поля:<br>' .
-                            '&nbsp;&nbsp;• <code>App name</code>: любое понятное название (например, <i>PGZ Storage</i> — слова <i>Google</i> и <i>Rclone</i> использовать запрещено).<br>' .
-                            '&nbsp;&nbsp;• <code>User support email</code>: выберите ваш Google email.<br>' .
-                            '&nbsp;&nbsp;• <code>Application home page</code>: URL вашего проекта (например, <code>https://progameszet.ru</code>).<br>' .
-                            '&nbsp;&nbsp;• <code>Application privacy policy link</code>: ссылка на политику конфиденциальности (например, <code>https://progameszet.ru/help/privacy-policy/</code>).<br>' .
-                            '&nbsp;&nbsp;• <code>Authorized domains</code>: нажмите <i>+ Add domain</i> и введите ваш домен (например, <code>progameszet.ru</code>).<br>' .
-                            '&nbsp;&nbsp;• <code>Developer contact information</code>: укажите ваш email адрес и нажмите <b>Save</b> внизу страницы.<br>' .
-                            '<b>Шаг 3.</b> Публикация приложения: перейдите в <a href="https://console.cloud.google.com/auth/audience" target="_blank" style="color:#2563eb;text-decoration:underline;">Google Auth Platform ➔ Audience</a> и в блоке <i>Publishing status</i> нажмите <b>«Publish app» (Опубликовать приложение)</b> ➔ подтвердите (Confirm). Статус изменится на <b>In production</b> (благодаря этому refresh_token станет бессрочным и не будет сгорать через 7 дней).<br>' .
-                            '<b>Шаг 4.</b> Создание ключей: перейдите в <a href="https://console.cloud.google.com/auth/clients" target="_blank" style="color:#2563eb;text-decoration:underline;">Google Auth Platform ➔ Clients</a> (или Credentials) ➔ <b>Create Client</b> ➔ тип <b>Desktop app (Приложение для ПК)</b>. Скопируйте <code>Client ID</code> и <code>Client Secret</code>.<br>' .
-                            '<b>Шаг 5.</b> Получение токена: на своем локальном ПК с установленным rclone выполните в командной строке / PowerShell:<br>' .
-                            '&nbsp;&nbsp;<code>rclone authorize "drive" "&lt;Client_ID&gt;" "&lt;Client_Secret&gt;"</code><br>' .
-                            '&nbsp;&nbsp;В открывшемся браузере выберите ваш аккаунт Google ➔ нажмите <i>«Дополнительно» (Advanced) ➔ «Перейти на страницу (небезопасно)» ➔ «Продолжить»</i>.<br>' .
-                            '<b>Шаг 6.</b> Скопируйте из консоли полученную строку с токеном (открывается и закрывается фигурными скобками <code>{...}</code>), вставьте в поле выше и нажмите <b>Сохранить</b> внизу формы. Токен сразу запишется в <code>rclone.conf</code> на игровой ноде.' .
+                            '<b>1.</b> Google Drive API ➔ Enable<br>' .
+                            '<b>2.</b> Google Auth Platform ➔ Clients ➔ Create Desktop App Client (Client ID & Secret)<br>' .
+                            '<b>3.</b> Run: <code>rclone authorize "drive" "&lt;Client_ID&gt;" "&lt;Client_Secret&gt;"</code><br>' .
+                            '<b>4.</b> Paste the output JSON <code>{...}</code> here and click Save.' .
                             '</div>'
                         )),
                 ]),
 
-            Section::make('Автоматическое резервное копирование по расписанию')
-                ->description('Настройка ежедневного резервного копирования выбранных серверов и системы в Google Диск')
+            Section::make(trans('gdrive-backup::messages.settings_schedule_section'))
+                ->description(trans('gdrive-backup::messages.settings_schedule_desc'))
                 ->schema([
                     Toggle::make('auto_backup_enabled')
-                        ->label('Включить автоматические бэкапы')
-                        ->default(true)
-                        ->helperText(new HtmlString(
-                            'Активирует регулярное резервное копирование в системном планировщике (cron) игровой ноды.'
-                        )),
+                        ->label(trans('gdrive-backup::messages.settings_auto_enabled'))
+                        ->default(true),
                     TextInput::make('auto_backup_time')
-                        ->label('Время запуска автобэкапа')
+                        ->label(trans('gdrive-backup::messages.settings_auto_time'))
                         ->default('04:30')
                         ->placeholder('04:30')
                         ->required()
-                        ->regex('/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/')
-                        ->helperText(new HtmlString(
-                            'Время в формате <code>ЧЧ:ММ</code> (24-часовой формат по времени сервера, например <code>04:30</code>).<br>' .
-                            '• Справка по формату crontab: <a href="https://crontab.guru" target="_blank" style="color:#2563eb;text-decoration:underline;">Crontab.guru</a>'
-                        )),
+                        ->regex('/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/'),
                     Checkbox::make('auto_backup_system')
-                        ->label('Резервная копия всей системы (VDS / Game Node System)')
-                        ->default(true)
-                        ->helperText(new HtmlString(
-                            'Создавать полный образ операционной системы ноды (/etc, конфигурации, сервисы).<br>' .
-                            '• Управление снимками системы: <a href="/admin/system-backups" target="_blank" style="color:#2563eb;text-decoration:underline;">Резервные копии системы VDS</a>'
-                        )),
+                        ->label(trans('gdrive-backup::messages.settings_auto_system'))
+                        ->default(true),
                     CheckboxList::make('auto_backup_servers')
-                        ->label('Игровые серверы для автоматического бэкапа')
+                        ->label(trans('gdrive-backup::messages.settings_auto_servers'))
                         ->options(function () {
                             try {
                                 return Server::query()
@@ -438,11 +413,7 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
                             }
                         })
                         ->bulkToggleable()
-                        ->columns(2)
-                        ->helperText(new HtmlString(
-                            'Отметьте игровые серверы, для которых необходимо автоматически создавать ежедневные бэкапы.<br>' .
-                            '• Управление серверами: <a href="/admin/servers" target="_blank" style="color:#2563eb;text-decoration:underline;">Список игровых серверов</a>'
-                        )),
+                        ->columns(2),
                 ]),
         ];
     }
@@ -462,14 +433,14 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
                 Cache::forget('gdrive_last_diagnostic_result');
 
                 Notification::make()
-                    ->title('Токен Google Drive успешно обновлен')
-                    ->body('Конфигурация rclone на игровой ноде обновлена.')
+                    ->title(trans('gdrive-backup::messages.token_updated_title'))
+                    ->body(trans('gdrive-backup::messages.token_updated_body'))
                     ->success()
                     ->send();
             } else {
                 Notification::make()
-                    ->title('Ошибка обновления токена')
-                    ->body('Не удалось распознать формат токена Google Drive. Проверьте JSON токена.')
+                    ->title(trans('gdrive-backup::messages.token_error_title'))
+                    ->body(trans('gdrive-backup::messages.token_error_body'))
                     ->danger()
                     ->send();
             }

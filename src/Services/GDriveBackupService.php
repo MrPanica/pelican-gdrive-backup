@@ -469,40 +469,40 @@ class GDriveBackupService
     {
         return [
             'ssh' => [
-                'title' => '1. SSH подключение к игровой ноде',
-                'desc' => 'Проверка связи с сервером ноды по SSH-порту',
+                'title' => trans('gdrive-backup::messages.step_1_title'),
+                'desc' => trans('gdrive-backup::messages.step_1_desc', ['host' => config('gdrive-backup.node_host', '87.228.56.213'), 'port' => config('gdrive-backup.node_port', 228)]),
             ],
             'tools' => [
-                'title' => '2. Проверка системных утилит ноды (rclone, tar, zstd, sha256sum, jq)',
-                'desc' => 'Проверка наличия системных бинарников для резервного копирования',
+                'title' => trans('gdrive-backup::messages.step_2_title'),
+                'desc' => trans('gdrive-backup::messages.step_2_desc'),
+            ],
+            'auth' => [
+                'title' => trans('gdrive-backup::messages.step_3_title'),
+                'desc' => trans('gdrive-backup::messages.step_3_desc', ['remote' => config('gdrive-backup.remote', 'gdrive')]),
             ],
             'create' => [
-                'title' => '3. Генерация тестовых данных',
-                'desc' => 'Создание случайного массива 64 KB со случайными байтами',
+                'title' => trans('gdrive-backup::messages.step_4_title'),
+                'desc' => trans('gdrive-backup::messages.step_4_desc'),
             ],
             'compress' => [
-                'title' => '4. Сжатие в архив .tar.zst (алгоритм Zstandard)',
-                'desc' => 'Архивация и компрессия zstd -3 -T2 с замером времени и степени сжатия',
+                'title' => trans('gdrive-backup::messages.step_5_title'),
+                'desc' => trans('gdrive-backup::messages.step_5_desc'),
             ],
             'upload' => [
-                'title' => '5. Загрузка тестового архива на Google Диск',
-                'desc' => 'Отправка тестового архива в облачное хранилище через rclone',
+                'title' => trans('gdrive-backup::messages.step_6_title'),
+                'desc' => trans('gdrive-backup::messages.step_6_desc', ['folder' => config('gdrive-backup.folder', 'TF2_Backups')]),
             ],
             'download' => [
-                'title' => '6. Скачивание тестового архива с Google Диска',
-                'desc' => 'Загрузка архива обратно на игровую ноду для проверки чтения',
+                'title' => trans('gdrive-backup::messages.step_7_title'),
+                'desc' => trans('gdrive-backup::messages.step_7_desc'),
             ],
             'decompress' => [
-                'title' => '7. Разархивация и распаковка архива',
-                'desc' => 'Декомпрессия zstd и распаковка tar в изолированную директорию',
+                'title' => trans('gdrive-backup::messages.step_8_title'),
+                'desc' => trans('gdrive-backup::messages.step_8_desc'),
             ],
             'integrity' => [
-                'title' => '8. Проверка целостности данных (SHA-256)',
-                'desc' => 'Побитовое сравнение контрольной суммы SHA-256 до и после загрузки',
-            ],
-            'cleanup' => [
-                'title' => '9. Очистка временных файлов',
-                'desc' => 'Удаление тестовых объектов из облака Google и с локального диска',
+                'title' => trans('gdrive-backup::messages.step_9_title'),
+                'desc' => trans('gdrive-backup::messages.step_9_desc'),
             ],
         ];
     }
@@ -664,12 +664,12 @@ class GDriveBackupService
         $statusBadgeHtml = '';
         if ($isCached && $lastTime) {
             if ($overallSuccess) {
-                $statusBadgeHtml = '<span style="color:#10b981;font-weight:600;">✓ Последний тест: ' . htmlspecialchars($lastTime) . ' (успешно)</span>';
+                $statusBadgeHtml = '<span style="color:#10b981;font-weight:600;">' . trans('gdrive-backup::messages.diag_last_success', ['time' => htmlspecialchars($lastTime)]) . '</span>';
             } else {
-                $statusBadgeHtml = '<span style="color:#ef4444;font-weight:600;">✗ Последний тест: ' . htmlspecialchars($lastTime) . ' (с ошибкой)</span>';
+                $statusBadgeHtml = '<span style="color:#ef4444;font-weight:600;">' . trans('gdrive-backup::messages.diag_last_failed', ['time' => htmlspecialchars($lastTime)]) . '</span>';
             }
         } else {
-            $statusBadgeHtml = '<span style="color:#94a3b8;">Тест готов к запуску</span>';
+            $statusBadgeHtml = '<span style="color:#94a3b8;">' . trans('gdrive-backup::messages.diag_ready') . '</span>';
         }
 
         $html = '
@@ -703,7 +703,7 @@ class GDriveBackupService
                         <polygon points="5 3 19 12 5 21 5 3"/>
                     </svg>
                 </span>
-                <span id="gdrive-btn-label">' . ($isCached ? 'Запустить тест повторно' : 'Запустить тест Google Диска') . '</span>
+                <span id="gdrive-btn-label">' . ($isCached ? trans('gdrive-backup::messages.diag_restart_btn') : trans('gdrive-backup::messages.diag_start_btn')) . '</span>
             </button>
         </div>
         <div id="gdrive-live-status-badge" style="font-size: 12px;">' . $statusBadgeHtml . '</div>
@@ -713,8 +713,8 @@ class GDriveBackupService
     <div style="border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; overflow: hidden; background: rgba(0,0,0,0.15);">';
 
         $html .= '<div style="padding: 10px 16px; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; background: rgba(255,255,255,0.02); border-bottom: 1px solid rgba(255,255,255,0.08); color: #94a3b8; display: flex; justify-content: space-between; align-items: center;">';
-        $html .= '<span>Этапы сквозного тестирования (в реальном времени)</span>';
-        $html .= '<span style="font-size: 11px; text-transform: none; color: #64748b;">Zstandard + Rclone streaming</span>';
+        $html .= '<span>' . trans('gdrive-backup::messages.diag_steps_header') . '</span>';
+        $html .= '<span style="font-size: 11px; text-transform: none; color: #64748b;">' . trans('gdrive-backup::messages.diag_steps_sub') . '</span>';
         $html .= '</div>';
 
         foreach ($stepsList as $key => $info) {
@@ -737,7 +737,7 @@ class GDriveBackupService
             } elseif ($status === 'failed') {
                 $rowClass = 'gdrive-step-failed';
                 $iconHtml = '<div style="min-width: 24px; height: 24px; border-radius: 50%; background: rgba(239,68,68,0.18); color: #ef4444; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 13px;">✗</div>';
-                $metricHtml = '<span style="font-family: ui-monospace, monospace; font-size: 11px; padding: 2px 8px; border-radius: 4px; background: rgba(239,68,68,0.15); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3);">Сбой</span>';
+                $metricHtml = '<span style="font-family: ui-monospace, monospace; font-size: 11px; padding: 2px 8px; border-radius: 4px; background: rgba(239,68,68,0.15); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3);">' . trans('gdrive-backup::messages.diag_step_failed') . '</span>';
             } else {
                 $iconHtml = '<div style="min-width: 24px; height: 24px; border-radius: 50%; background: rgba(255,255,255,0.06); color: #64748b; display: flex; align-items: center; justify-content: center; font-size: 11px;">○</div>';
             }
@@ -763,11 +763,11 @@ class GDriveBackupService
                 $duration = $cached['total_duration_sec'] ?? '8.8';
                 $summaryHtml = '<div style="margin-top:14px;padding:12px 16px;background:rgba(16,185,129,0.12);border:1px solid #10b981;border-radius:8px;color:#34d399;display:flex;align-items:center;gap:10px;font-weight:600;font-size:13px;">' .
                     '<span style="font-size:18px;">✓</span>' .
-                    '<span>Все 9 этапов успешно пройдены (' . $duration . ' сек)! Google Диск полностью исправен и готов к созданию резервных копий.</span>' .
+                    '<span>' . trans('gdrive-backup::messages.diag_summary_success', ['sec' => $duration]) . '</span>' .
                     '</div>';
             } elseif (!empty($cached['error'])) {
                 $summaryHtml = '<div style="margin-top:14px;padding:12px 16px;background:rgba(239,68,68,0.12);border:1px solid #ef4444;border-radius:8px;color:#fca5a5;font-size:13px;">' .
-                    '<div style="font-weight:600;margin-bottom:4px;">❌ Тестирование завершилось с ошибкой</div>' .
+                    '<div style="font-weight:600;margin-bottom:4px;">❌ ' . trans('gdrive-backup::messages.diag_summary_failed') . '</div>' .
                     '<div>' . htmlspecialchars($cached['error']) . '</div>' .
                     '</div>';
             }
@@ -775,8 +775,9 @@ class GDriveBackupService
         $html .= '<div id="gdrive-live-summary">' . $summaryHtml . '</div>';
         $html .= '<div id="gdrive-live-recommendation"></div>';
 
-        $b64Js = base64_encode(self::getWidgetScriptJs());
+        $i18nJson = json_encode(trans('gdrive-backup::messages'), JSON_UNESCAPED_UNICODE);
         $html .= '
+<script>window.PelicanGDriveBackupI18n = ' . $i18nJson . ';</script>
 <img src="data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\'></svg>" style="display:none;" onload="(function(){ if(!window.runGDriveLiveTest){ var s=document.createElement(\'script\'); s.textContent=atob(\'' . $b64Js . '\'); document.head.appendChild(s); } })();">
 ' . self::getWidgetScriptHtml() . '
 </div>';
@@ -791,6 +792,9 @@ class GDriveBackupService
     {
         return <<<'JS'
 (function() {
+    var i18n = window.PelicanGDriveBackupI18n || {};
+    var t = function(k, d) { return i18n[k] || d; };
+
     window.setGDriveStepState = function(stepKey, state, details, metric, recommendation) {
         var row = document.getElementById("gdrive-row-" + stepKey);
         var iconEl = document.getElementById("icon-" + stepKey);
@@ -803,31 +807,31 @@ class GDriveBackupService
         if (state === "running") {
             row.classList.add("gdrive-step-running");
             if (iconEl) iconEl.innerHTML = '<div style="min-width:24px;height:24px;border-radius:50%;background:rgba(59,130,246,0.18);color:#60a5fa;display:flex;align-items:center;justify-content:center;"><svg style="width:14px;height:14px;animation:gdrive-spin 0.8s linear infinite;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-opacity="0.25"></circle><path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor"></path></svg></div>';
-            if (descEl) descEl.innerHTML = '<span style="color:#60a5fa;font-weight:500;">Тестируется в реальном времени...</span>';
-            if (metricEl) metricEl.innerHTML = '<span style="font-family:ui-monospace,monospace;font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(59,130,246,0.15);color:#60a5fa;border:1px solid rgba(59,130,246,0.3);">В процессе...</span>';
+            if (descEl) descEl.innerHTML = '<span style="color:#60a5fa;font-weight:500;">' + t('diag_step_running', 'Тестируется...') + '</span>';
+            if (metricEl) metricEl.innerHTML = '<span style="font-family:ui-monospace,monospace;font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(59,130,246,0.15);color:#60a5fa;border:1px solid rgba(59,130,246,0.3);">' + t('diag_step_running', 'В процессе...') + '</span>';
         } else if (state === "success") {
             row.classList.add("gdrive-step-success");
             if (iconEl) iconEl.innerHTML = '<div style="min-width:24px;height:24px;border-radius:50%;background:rgba(16,185,129,0.18);color:#10b981;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:13px;">✓</div>';
             if (descEl) {
-                descEl.textContent = details || "Пройдено успешно";
+                descEl.textContent = details || t('diag_step_passed', 'Пройдено успешно');
                 descEl.style.color = "#94a3b8";
             }
             if (metricEl) metricEl.innerHTML = metric ? '<span style="font-family:ui-monospace,monospace;font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(16,185,129,0.12);color:#34d399;border:1px solid rgba(16,185,129,0.25);">' + metric + '</span>' : '';
         } else if (state === "failed") {
             row.classList.add("gdrive-step-failed");
             if (iconEl) iconEl.innerHTML = '<div style="min-width:24px;height:24px;border-radius:50%;background:rgba(239,68,68,0.18);color:#ef4444;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:13px;">✗</div>';
-            if (descEl) descEl.innerHTML = '<span style="color:#f87171;">' + (details || "Ошибка выполнения") + '</span>';
-            if (metricEl) metricEl.innerHTML = '<span style="font-family:ui-monospace,monospace;font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);">Сбой</span>';
+            if (descEl) descEl.innerHTML = '<span style="color:#f87171;">' + (details || t('diag_step_failed', 'Ошибка выполнения')) + '</span>';
+            if (metricEl) metricEl.innerHTML = '<span style="font-family:ui-monospace,monospace;font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);">' + t('diag_step_failed', 'Сбой') + '</span>';
             if (recommendation) {
                 var recBox = document.getElementById("gdrive-live-recommendation");
                 if (recBox) {
-                    recBox.innerHTML = '<div style="margin-top:12px;padding:12px 14px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:8px;color:#fde68a;font-size:12px;line-height:1.6;"><b style="color:#fbbf24;">💡 Рекомендация:</b><br>' + recommendation.replace(/\n/g, "<br>") + '</div>';
+                    recBox.innerHTML = '<div style="margin-top:12px;padding:12px 14px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:8px;color:#fde68a;font-size:12px;line-height:1.6;"><b style="color:#fbbf24;">💡 ' + (i18n.recommendation_prefix || 'Рекомендация') + ':</b><br>' + recommendation.replace(/\n/g, "<br>") + '</div>';
                 }
             }
         } else {
             if (iconEl) iconEl.innerHTML = '<div style="min-width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,0.06);color:#64748b;display:flex;align-items:center;justify-content:center;font-size:11px;">○</div>';
             if (descEl) {
-                descEl.textContent = details || "В очереди проверки...";
+                descEl.textContent = details || "...";
                 descEl.style.color = "#64748b";
             }
             if (metricEl) metricEl.innerHTML = "";
@@ -850,14 +854,14 @@ class GDriveBackupService
         btn.style.cursor = "not-allowed";
         if (spinner) spinner.style.display = "inline-block";
         if (icon) icon.style.display = "none";
-        if (btnText) btnText.textContent = "Тестирование выполняется...";
-        if (statusBadge) statusBadge.innerHTML = '<span style="color:#60a5fa;animation:gdrive-pulse 1.2s infinite;font-weight:600;">⏳ Тестирование в реальном времени...</span>';
+        if (btnText) btnText.textContent = t('diag_running', 'Тестирование выполняется...');
+        if (statusBadge) statusBadge.innerHTML = '<span style="color:#60a5fa;animation:gdrive-pulse 1.2s infinite;font-weight:600;">⏳ ' + t('diag_running', 'Тестирование...') + '</span>';
         if (summary) summary.innerHTML = "";
         if (rec) rec.innerHTML = "";
 
-        var stepKeys = ["ssh", "tools", "create", "compress", "upload", "download", "decompress", "integrity", "cleanup"];
+        var stepKeys = ["ssh", "tools", "auth", "create", "compress", "upload", "download", "decompress", "integrity"];
         stepKeys.forEach(function(key) {
-            window.setGDriveStepState(key, "pending", "В очереди проверки...");
+            window.setGDriveStepState(key, "pending", "...");
         });
 
         try {
@@ -876,20 +880,20 @@ class GDriveBackupService
                         btn.style.cursor = "pointer";
                         if (spinner) spinner.style.display = "none";
                         if (icon) icon.style.display = "inline-block";
-                        if (btnText) btnText.textContent = "Запустить тест повторно";
+                        if (btnText) btnText.textContent = t('diag_restart_btn', 'Запустить тест повторно');
 
                         if (data.overall_success) {
-                            var dur = data.duration ? " (" + data.duration + " сек)" : "";
-                            if (statusBadge) statusBadge.innerHTML = '<span style="color:#10b981;font-weight:600;">✓ Все 9 этапов пройдены' + dur + '</span>';
+                            var dur = data.duration ? " (" + data.duration + " s)" : "";
+                            if (statusBadge) statusBadge.innerHTML = '<span style="color:#10b981;font-weight:600;">✓ ' + t('diag_step_passed', 'Пройдено') + dur + '</span>';
                             if (summary) summary.innerHTML = '<div style="margin-top:14px;padding:12px 16px;background:rgba(16,185,129,0.12);border:1px solid #10b981;border-radius:8px;color:#34d399;display:flex;align-items:center;gap:10px;font-weight:600;font-size:13px;">' +
                                 '<span style="font-size:18px;">✓</span>' +
-                                '<span>Все 9 этапов успешно пройдены! Google Диск полностью исправен и готов к созданию резервных копий.</span>' +
+                                '<span>' + (i18n.diag_summary_success ? i18n.diag_summary_success.replace(':sec', data.duration || '') : 'Google Drive is healthy and ready.') + '</span>' +
                                 '</div>';
                         } else {
-                            if (statusBadge) statusBadge.innerHTML = '<span style="color:#ef4444;font-weight:600;">✗ Ошибка при тестировании</span>';
+                            if (statusBadge) statusBadge.innerHTML = '<span style="color:#ef4444;font-weight:600;">✗ ' + t('diag_step_failed', 'Сбой') + '</span>';
                             if (summary) summary.innerHTML = '<div style="margin-top:14px;padding:12px 16px;background:rgba(239,68,68,0.12);border:1px solid #ef4444;border-radius:8px;color:#fca5a5;font-size:13px;">' +
-                                '<div style="font-weight:600;margin-bottom:4px;">❌ Тестирование завершилось с ошибкой</div>' +
-                                '<div>' + (data.error || "Один из этапов завершился со сбоем") + '</div>' +
+                                '<div style="font-weight:600;margin-bottom:4px;">❌ ' + t('diag_summary_failed', 'Тестирование завершилось с ошибкой') + '</div>' +
+                                '<div>' + (data.error || "Stage failed") + '</div>' +
                                 '</div>';
                         }
                     }
@@ -905,8 +909,8 @@ class GDriveBackupService
                 btn.style.cursor = "pointer";
                 if (spinner) spinner.style.display = "none";
                 if (icon) icon.style.display = "inline-block";
-                if (btnText) btnText.textContent = "Запустить тест повторно";
-                if (statusBadge) statusBadge.innerHTML = '<span style="color:#ef4444;">Ошибка связи при тестировании</span>';
+                if (btnText) btnText.textContent = t('diag_restart_btn', 'Запустить тест повторно');
+                if (statusBadge) statusBadge.innerHTML = '<span style="color:#ef4444;">' + t('diag_step_failed', 'Ошибка связи при тестировании') + '</span>';
             };
         } catch(err) {
             console.error("EventSource failed", err);

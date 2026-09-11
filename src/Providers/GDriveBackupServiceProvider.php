@@ -21,6 +21,8 @@ class GDriveBackupServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $this->loadTranslationsFrom(__DIR__ . '/../../lang', 'gdrive-backup');
+
         // Apply saved custom settings if exist
         $settingsPath = storage_path('app/gdrive_backup_settings.json');
         if (File::exists($settingsPath)) {

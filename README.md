@@ -37,6 +37,16 @@ A high-performance streamed cloud backup and disaster recovery plugin for **Peli
 
 ## 🛠️ Quick Installation
 
+### 🚀 1-Click Installation via URL (Recommended)
+In Pelican Admin Panel ➔ **Plugins** ➔ click the **«Import from URL»** button (globe icon):
+```text
+https://github.com/MrPanica/pelican-gdrive-backup/archive/refs/heads/master.zip
+```
+Pelican will automatically download, unpack, and activate the plugin.
+
+---
+
+### Manual Installation via CLI
 ### 1. Game Node Requirements
 On the target game node, install the required utilities:
 ```bash
