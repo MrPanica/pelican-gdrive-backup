@@ -37,5 +37,16 @@ class GDriveBackupServiceProvider extends ServiceProvider
                 new GoogleDriveBackupSchema($this->app->make(GDriveBackupService::class))
             );
         }
+
+        // Register route for real-time diagnostic testing stream
+        \Illuminate\Support\Facades\Route::middleware(['web', 'auth.session'])->group(function () {
+            \Illuminate\Support\Facades\Route::get('/admin/gdrive-backup/stream-test', function () {
+                if (!auth()->check()) {
+                    return response()->json(['error' => 'Unauthorized'], 401);
+                }
+                $service = app(\ProGamesZet\GDriveBackup\Services\GDriveBackupService::class);
+                return $service->streamDiagnosticResponse();
+            })->name('admin.gdrive-backup.stream-test');
+        });
     }
 }

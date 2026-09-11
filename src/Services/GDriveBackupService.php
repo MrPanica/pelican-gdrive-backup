@@ -8,6 +8,7 @@ use App\Models\Server;
 use Exception;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class GDriveBackupService
 {
@@ -59,14 +60,21 @@ class GDriveBackupService
     }
 
     /**
+     * Build remote command string for SSH execution.
+     */
+    public function buildSshCommand(string $command): string
+    {
+        $escaped = escapeshellarg($command);
+        $keyOpt = (!empty($this->keyPath) && file_exists($this->keyPath)) ? "-i " . escapeshellarg($this->keyPath) : "";
+        return "ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 {$keyOpt} -p {$this->port} {$this->user}@{$this->host} {$escaped}";
+    }
+
+    /**
      * Execute remote command on game node via SSH key.
      */
     public function runCommand(string $command): string
     {
-        $escaped = escapeshellarg($command);
-        $keyOpt = (!empty($this->keyPath) && file_exists($this->keyPath)) ? "-i " . escapeshellarg($this->keyPath) : "";
-        $cmd = "ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 {$keyOpt} -p {$this->port} {$this->user}@{$this->host} {$escaped} 2>&1";
-
+        $cmd = $this->buildSshCommand($command) . " 2>&1";
         $output = shell_exec($cmd);
 
         return trim((string) $output);
@@ -448,6 +456,460 @@ class GDriveBackupService
         }
 
         $html .= '</div>';
+
+        return $html;
+    }
+
+    /**
+     * Get predefined list of 9 diagnostic steps with labels and descriptions.
+     *
+     * @return array<string, array{title: string, desc: string}>
+     */
+    public static function getDiagnosticStepsDefinitions(): array
+    {
+        return [
+            'ssh' => [
+                'title' => '1. SSH подключение к игровой ноде',
+                'desc' => 'Проверка связи с сервером ноды по SSH-порту',
+            ],
+            'tools' => [
+                'title' => '2. Проверка системных утилит ноды (rclone, tar, zstd, sha256sum, jq)',
+                'desc' => 'Проверка наличия системных бинарников для резервного копирования',
+            ],
+            'create' => [
+                'title' => '3. Генерация тестовых данных',
+                'desc' => 'Создание случайного массива 64 KB со случайными байтами',
+            ],
+            'compress' => [
+                'title' => '4. Сжатие в архив .tar.zst (алгоритм Zstandard)',
+                'desc' => 'Архивация и компрессия zstd -3 -T2 с замером времени и степени сжатия',
+            ],
+            'upload' => [
+                'title' => '5. Загрузка тестового архива на Google Диск',
+                'desc' => 'Отправка тестового архива в облачное хранилище через rclone',
+            ],
+            'download' => [
+                'title' => '6. Скачивание тестового архива с Google Диска',
+                'desc' => 'Загрузка архива обратно на игровую ноду для проверки чтения',
+            ],
+            'decompress' => [
+                'title' => '7. Разархивация и распаковка архива',
+                'desc' => 'Декомпрессия zstd и распаковка tar в изолированную директорию',
+            ],
+            'integrity' => [
+                'title' => '8. Проверка целостности данных (SHA-256)',
+                'desc' => 'Побитовое сравнение контрольной суммы SHA-256 до и после загрузки',
+            ],
+            'cleanup' => [
+                'title' => '9. Очистка временных файлов',
+                'desc' => 'Удаление тестовых объектов из облака Google и с локального диска',
+            ],
+        ];
+    }
+
+    /**
+     * Handle Server-Sent Events (SSE) stream for real-time diagnostic progress.
+     */
+    public function streamDiagnosticResponse(): StreamedResponse
+    {
+        return new StreamedResponse(function () {
+            while (ob_get_level() > 0) {
+                @ob_end_flush();
+            }
+
+            $startTime = microtime(true);
+            $fullResult = [
+                'started_at' => date('d.m.Y H:i:s'),
+                'node' => ['host' => $this->host, 'port' => $this->port, 'user' => $this->user],
+                'remote' => $this->remote,
+                'folder' => $this->folder,
+                'overall_success' => false,
+                'steps' => [],
+                'error' => null,
+                'recommendation' => null,
+                'total_duration_sec' => 0.0,
+            ];
+
+            // 1. SSH Step
+            echo "data: " . json_encode([
+                'step' => 'ssh',
+                'state' => 'running',
+                'title' => '1. SSH подключение к игровой ноде',
+                'details' => "Установка соединения с {$this->user}@{$this->host}:{$this->port}...",
+            ], JSON_UNESCAPED_UNICODE) . "\n\n";
+            flush();
+
+            $sshOutput = $this->runCommand('whoami && uname -s 2>&1');
+            if (!str_contains($sshOutput, $this->user) && !str_contains($sshOutput, 'Linux')) {
+                $errStep = [
+                    'step' => 'ssh',
+                    'state' => 'failed',
+                    'title' => '1. SSH подключение к игровой ноде',
+                    'details' => "Не удалось установить SSH-соединение с {$this->user}@{$this->host}:{$this->port}",
+                    'error' => $sshOutput ?: 'Timeout',
+                    'recommendation' => "Проверьте доступность хоста {$this->host}, порт {$this->port} и ключ {$this->keyPath}.",
+                ];
+                $fullResult['steps']['ssh'] = ['status' => 'failed', 'title' => $errStep['title'], 'details' => $errStep['details'], 'error' => $errStep['error']];
+                $fullResult['error'] = 'Ошибка SSH подключения к игровой ноде';
+                $fullResult['recommendation'] = $errStep['recommendation'];
+                $fullResult['total_duration_sec'] = round(microtime(true) - $startTime, 2);
+
+                Cache::put('gdrive_last_diagnostic_result', $fullResult, now()->addMinutes(30));
+                Cache::put('gdrive_last_diagnostic_time', now()->format('d.m.Y H:i:s'), now()->addMinutes(30));
+
+                echo "data: " . json_encode($errStep, JSON_UNESCAPED_UNICODE) . "\n\n";
+                echo "data: " . json_encode(['done' => true, 'overall_success' => false, 'error' => $fullResult['error']], JSON_UNESCAPED_UNICODE) . "\n\n";
+                flush();
+                return;
+            }
+
+            $fullResult['steps']['ssh'] = [
+                'status' => 'success',
+                'title' => '1. SSH подключение к игровой ноде',
+                'details' => "Соединение успешно установлено ({$this->user}@{$this->host}:{$this->port})",
+                'metric' => 'OK',
+            ];
+            echo "data: " . json_encode([
+                'step' => 'ssh',
+                'state' => 'success',
+                'title' => '1. SSH подключение к игровой ноде',
+                'details' => "Соединение успешно установлено ({$this->user}@{$this->host}:{$this->port})",
+                'metric' => 'OK',
+            ], JSON_UNESCAPED_UNICODE) . "\n\n";
+            flush();
+
+            // 2-9. Stream from node backup script
+            $cmd = $this->buildSshCommand("{$this->backupScript} test 2>&1");
+            $handle = popen($cmd, 'r');
+            if (!$handle) {
+                echo "data: " . json_encode([
+                    'step' => 'tools',
+                    'state' => 'failed',
+                    'title' => '2. Запуск скрипта тестирования',
+                    'error' => 'Не удалось запустить процесс SSH на сервере панели',
+                ], JSON_UNESCAPED_UNICODE) . "\n\n";
+                echo "data: " . json_encode(['done' => true, 'overall_success' => false, 'error' => 'Не удалось запустить процесс SSH'], JSON_UNESCAPED_UNICODE) . "\n\n";
+                flush();
+                return;
+            }
+
+            $finalJson = null;
+            while (!feof($handle)) {
+                $line = fgets($handle);
+                if ($line === false) break;
+                $line = trim($line);
+                if (str_starts_with($line, 'EVENT:')) {
+                    $rawJson = substr($line, 6);
+                    $event = json_decode($rawJson, true);
+                    if ($event && isset($event['step'])) {
+                        $stepName = $event['step'];
+                        if (($event['state'] ?? '') === 'success' || ($event['state'] ?? '') === 'failed') {
+                            $fullResult['steps'][$stepName] = [
+                                'status' => $event['state'],
+                                'title' => $event['title'] ?? $stepName,
+                                'details' => $event['details'] ?? '',
+                                'metric' => $event['metric'] ?? '',
+                                'error' => $event['error'] ?? null,
+                            ];
+                        }
+                    }
+                    echo "data: " . $rawJson . "\n\n";
+                    flush();
+                } elseif (str_starts_with($line, 'JSON:')) {
+                    $finalJson = json_decode(substr($line, 5), true);
+                }
+            }
+            pclose($handle);
+
+            $isSuccess = !empty($finalJson['success']);
+            $fullResult['overall_success'] = $isSuccess;
+            if (!$isSuccess) {
+                $fullResult['error'] = $finalJson['error'] ?? 'Обнаружена ошибка при тестировании Google Диска';
+                if (str_contains($fullResult['error'], 'invalid_grant') || str_contains($fullResult['error'], 'token expired')) {
+                    $fullResult['recommendation'] = "Срок действия OAuth токена Google Drive истек. Перейдите в Google Cloud Console -> Google Auth Platform -> Audience и опубликуйте приложение (Publish app), затем обновите токен.";
+                }
+            }
+            $fullResult['total_duration_sec'] = round(microtime(true) - $startTime, 2);
+
+            Cache::put('gdrive_last_diagnostic_result', $fullResult, now()->addMinutes(30));
+            Cache::put('gdrive_last_diagnostic_time', now()->format('d.m.Y H:i:s'), now()->addMinutes(30));
+
+            echo "data: " . json_encode([
+                'done' => true,
+                'overall_success' => $isSuccess,
+                'duration' => $fullResult['total_duration_sec'],
+                'error' => $fullResult['error'],
+                'recommendation' => $fullResult['recommendation'],
+            ], JSON_UNESCAPED_UNICODE) . "\n\n";
+            flush();
+        }, 200, [
+            'Content-Type' => 'text/event-stream; charset=utf-8',
+            'Cache-Control' => 'no-cache, no-store, must-revalidate',
+            'Connection' => 'keep-alive',
+            'X-Accel-Buffering' => 'no',
+        ]);
+    }
+
+    /**
+     * Render rich real-time diagnostic widget with start button and 9 live stages.
+     */
+    public function renderRealtimeDiagnosticWidget(?array $cached = null): string
+    {
+        $stepsList = self::getDiagnosticStepsDefinitions();
+        $isCached = !empty($cached) && isset($cached['steps']);
+        $lastTime = $cached['started_at'] ?? Cache::get('gdrive_last_diagnostic_time', null);
+        $overallSuccess = $cached['overall_success'] ?? null;
+
+        $statusBadgeHtml = '';
+        if ($isCached && $lastTime) {
+            if ($overallSuccess) {
+                $statusBadgeHtml = '<span style="color:#10b981;font-weight:600;">✓ Последний тест: ' . htmlspecialchars($lastTime) . ' (успешно)</span>';
+            } else {
+                $statusBadgeHtml = '<span style="color:#ef4444;font-weight:600;">✗ Последний тест: ' . htmlspecialchars($lastTime) . ' (с ошибкой)</span>';
+            }
+        } else {
+            $statusBadgeHtml = '<span style="color:#94a3b8;">Тест готов к запуску</span>';
+        }
+
+        $html = '
+<style>
+@keyframes gdrive-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes gdrive-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.gdrive-step-row { transition: all 0.25s ease; border-bottom: 1px solid rgba(255,255,255,0.05); }
+.gdrive-step-row:last-child { border-bottom: none; }
+.gdrive-step-running { background: rgba(59, 130, 246, 0.08) !important; }
+.gdrive-step-success { background: rgba(16, 185, 129, 0.03) !important; }
+.gdrive-step-failed { background: rgba(239, 68, 68, 0.08) !important; }
+#gdrive-start-test-btn:hover { background: #0369a1 !important; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(2,132,199,0.45) !important; }
+</style>
+
+<div style="font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; font-size: 13px; line-height: 1.5;">
+
+    <!-- Control Header with Big Test Button -->
+    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; margin-bottom: 16px; padding: 14px 18px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px;">
+        <div>
+            <button type="button" id="gdrive-start-test-btn" onclick="runGDriveLiveTest()"
+                style="display: inline-flex; align-items: center; gap: 10px; padding: 11px 24px; background: #0284c7; color: #ffffff; font-weight: 600; font-size: 14px; border: none; border-radius: 8px; cursor: pointer; box-shadow: 0 2px 8px rgba(2,132,199,0.35); transition: all 0.2s;">
+                <span id="gdrive-btn-spinner" style="display: none;">
+                    <svg style="width: 18px; height: 18px; animation: gdrive-spin 0.8s linear infinite;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-opacity="0.25"></circle>
+                        <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor"></path>
+                    </svg>
+                </span>
+                <span id="gdrive-btn-icon">
+                    <svg style="width: 18px; height: 18px;" viewBox="0 0 24 24" fill="currentColor">
+                        <polygon points="5 3 19 12 5 21 5 3"/>
+                    </svg>
+                </span>
+                <span id="gdrive-btn-label">' . ($isCached ? 'Запустить тест повторно' : 'Запустить тест Google Диска') . '</span>
+            </button>
+        </div>
+        <div id="gdrive-live-status-badge" style="font-size: 12px;">' . $statusBadgeHtml . '</div>
+    </div>
+
+    <!-- Steps Container -->
+    <div style="border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; overflow: hidden; background: rgba(0,0,0,0.15);">';
+
+        $html .= '<div style="padding: 10px 16px; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; background: rgba(255,255,255,0.02); border-bottom: 1px solid rgba(255,255,255,0.08); color: #94a3b8; display: flex; justify-content: space-between; align-items: center;">';
+        $html .= '<span>Этапы сквозного тестирования (в реальном времени)</span>';
+        $html .= '<span style="font-size: 11px; text-transform: none; color: #64748b;">Zstandard + Rclone streaming</span>';
+        $html .= '</div>';
+
+        foreach ($stepsList as $key => $info) {
+            $stepData = $cached['steps'][$key] ?? null;
+            $status = $stepData['status'] ?? 'pending';
+            $title = htmlspecialchars($stepData['title'] ?? $info['title']);
+            $details = htmlspecialchars($stepData['details'] ?? $info['desc']);
+            $metric = isset($stepData['metric']) ? htmlspecialchars($stepData['metric']) : '';
+
+            $rowClass = '';
+            $iconHtml = '';
+            $metricHtml = '';
+
+            if ($status === 'success') {
+                $rowClass = 'gdrive-step-success';
+                $iconHtml = '<div style="min-width: 24px; height: 24px; border-radius: 50%; background: rgba(16,185,129,0.18); color: #10b981; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 13px;">✓</div>';
+                if ($metric) {
+                    $metricHtml = '<span style="font-family: ui-monospace, monospace; font-size: 11px; padding: 2px 8px; border-radius: 4px; background: rgba(16,185,129,0.12); color: #34d399; border: 1px solid rgba(16,185,129,0.25);">' . $metric . '</span>';
+                }
+            } elseif ($status === 'failed') {
+                $rowClass = 'gdrive-step-failed';
+                $iconHtml = '<div style="min-width: 24px; height: 24px; border-radius: 50%; background: rgba(239,68,68,0.18); color: #ef4444; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 13px;">✗</div>';
+                $metricHtml = '<span style="font-family: ui-monospace, monospace; font-size: 11px; padding: 2px 8px; border-radius: 4px; background: rgba(239,68,68,0.15); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3);">Сбой</span>';
+            } else {
+                $iconHtml = '<div style="min-width: 24px; height: 24px; border-radius: 50%; background: rgba(255,255,255,0.06); color: #64748b; display: flex; align-items: center; justify-content: center; font-size: 11px;">○</div>';
+            }
+
+            $html .= '<div id="gdrive-row-' . $key . '" class="gdrive-step-row ' . $rowClass . '" style="padding: 11px 16px; display: flex; align-items: flex-start; gap: 14px;">';
+            $html .= '<div id="icon-' . $key . '">' . $iconHtml . '</div>';
+            $html .= '<div style="flex: 1; min-width: 0;">';
+            $html .= '<div style="display: flex; justify-content: space-between; align-items: center;">';
+            $html .= '<span id="title-' . $key . '" style="font-weight: 500; font-size: 13px;">' . $title . '</span>';
+            $html .= '<div id="metric-' . $key . '">' . $metricHtml . '</div>';
+            $html .= '</div>';
+            $html .= '<div id="desc-' . $key . '" style="font-size: 12px; color: ' . ($status === 'pending' ? '#64748b' : '#94a3b8') . '; margin-top: 3px;">' . $details . '</div>';
+            $html .= '</div>';
+            $html .= '</div>';
+        }
+
+        $html .= '</div>';
+
+        // Live Summary Container
+        $summaryHtml = '';
+        if ($isCached) {
+            if ($overallSuccess) {
+                $duration = $cached['total_duration_sec'] ?? '8.8';
+                $summaryHtml = '<div style="margin-top:14px;padding:12px 16px;background:rgba(16,185,129,0.12);border:1px solid #10b981;border-radius:8px;color:#34d399;display:flex;align-items:center;gap:10px;font-weight:600;font-size:13px;">' .
+                    '<span style="font-size:18px;">✓</span>' .
+                    '<span>Все 9 этапов успешно пройдены (' . $duration . ' сек)! Google Диск полностью исправен и готов к созданию резервных копий.</span>' .
+                    '</div>';
+            } elseif (!empty($cached['error'])) {
+                $summaryHtml = '<div style="margin-top:14px;padding:12px 16px;background:rgba(239,68,68,0.12);border:1px solid #ef4444;border-radius:8px;color:#fca5a5;font-size:13px;">' .
+                    '<div style="font-weight:600;margin-bottom:4px;">❌ Тестирование завершилось с ошибкой</div>' .
+                    '<div>' . htmlspecialchars($cached['error']) . '</div>' .
+                    '</div>';
+            }
+        }
+        $html .= '<div id="gdrive-live-summary">' . $summaryHtml . '</div>';
+        $html .= '<div id="gdrive-live-recommendation"></div>';
+
+        // Realtime Client JavaScript
+        $html .= '
+<script>
+function runGDriveLiveTest() {
+    const btn = document.getElementById("gdrive-start-test-btn");
+    const btnText = document.getElementById("gdrive-btn-label");
+    const spinner = document.getElementById("gdrive-btn-spinner");
+    const icon = document.getElementById("gdrive-btn-icon");
+    const statusBadge = document.getElementById("gdrive-live-status-badge");
+    const summary = document.getElementById("gdrive-live-summary");
+    const rec = document.getElementById("gdrive-live-recommendation");
+
+    if (!btn) return;
+
+    btn.disabled = true;
+    btn.style.opacity = "0.75";
+    btn.style.cursor = "not-allowed";
+    if (spinner) spinner.style.display = "inline-block";
+    if (icon) icon.style.display = "none";
+    if (btnText) btnText.textContent = "Тестирование выполняется...";
+    if (statusBadge) statusBadge.innerHTML = "<span style=\"color:#60a5fa;animation:gdrive-pulse 1.2s infinite;font-weight:600;\">⏳ Тестирование в реальном времени...</span>";
+    if (summary) summary.innerHTML = "";
+    if (rec) rec.innerHTML = "";
+
+    const stepKeys = ["ssh", "tools", "create", "compress", "upload", "download", "decompress", "integrity", "cleanup"];
+    stepKeys.forEach(function(key) {
+        setGDriveStepState(key, "pending", "В очереди проверки...");
+    });
+
+    try {
+        const es = new EventSource("/admin/gdrive-backup/stream-test", { withCredentials: true });
+
+        es.onmessage = function(e) {
+            try {
+                const data = JSON.parse(e.data);
+                if (data.step) {
+                    setGDriveStepState(data.step, data.state, data.details || data.error, data.metric, data.recommendation);
+                }
+                if (data.done) {
+                    es.close();
+                    btn.disabled = false;
+                    btn.style.opacity = "1";
+                    btn.style.cursor = "pointer";
+                    if (spinner) spinner.style.display = "none";
+                    if (icon) icon.style.display = "inline-block";
+                    if (btnText) btnText.textContent = "Запустить тест повторно";
+
+                    if (data.overall_success) {
+                        const dur = data.duration ? " (" + data.duration + " сек)" : "";
+                        if (statusBadge) statusBadge.innerHTML = "<span style=\"color:#10b981;font-weight:600;\">✓ Все 9 этапов пройдены" + dur + "</span>";
+                        if (summary) summary.innerHTML = "<div style=\"margin-top:14px;padding:12px 16px;background:rgba(16,185,129,0.12);border:1px solid #10b981;border-radius:8px;color:#34d399;display:flex;align-items:center;gap:10px;font-weight:600;font-size:13px;\">" +
+                            "<span style=\"font-size:18px;\">✓</span>" +
+                            "<span>Все 9 этапов успешно пройдены! Google Диск полностью исправен и готов к созданию резервных копий.</span>" +
+                            "</div>";
+                    } else {
+                        if (statusBadge) statusBadge.innerHTML = "<span style=\"color:#ef4444;font-weight:600;\">✗ Ошибка при тестировании</span>";
+                        if (summary) summary.innerHTML = "<div style=\"margin-top:14px;padding:12px 16px;background:rgba(239,68,68,0.12);border:1px solid #ef4444;border-radius:8px;color:#fca5a5;font-size:13px;\">" +
+                            "<div style=\"font-weight:600;margin-bottom:4px;\">❌ Тестирование завершилось с ошибкой</div>" +
+                            "<div>" + (data.error || "Один из этапов завершился со сбоем") + "</div>" +
+                            "</div>";
+                    }
+                }
+            } catch(err) {
+                console.error("SSE parse error", err, e.data);
+            }
+        };
+
+        es.onerror = function(err) {
+            es.close();
+            btn.disabled = false;
+            btn.style.opacity = "1";
+            btn.style.cursor = "pointer";
+            if (spinner) spinner.style.display = "none";
+            if (icon) icon.style.display = "inline-block";
+            if (btnText) btnText.textContent = "Запустить тест повторно";
+            if (statusBadge) statusBadge.innerHTML = "<span style=\"color:#ef4444;\">Ошибка связи при тестировании</span>";
+        };
+    } catch(err) {
+        console.error("EventSource failed", err);
+    }
+}
+
+function setGDriveStepState(stepKey, state, details, metric, recommendation) {
+    const row = document.getElementById("gdrive-row-" + stepKey);
+    const iconEl = document.getElementById("icon-" + stepKey);
+    const descEl = document.getElementById("desc-" + stepKey);
+    const metricEl = document.getElementById("metric-" + stepKey);
+    if (!row) return;
+
+    row.classList.remove("gdrive-step-running", "gdrive-step-success", "gdrive-step-failed");
+
+    if (state === "running") {
+        row.classList.add("gdrive-step-running");
+        if (iconEl) iconEl.innerHTML = "<div style=\"min-width:24px;height:24px;border-radius:50%;background:rgba(59,130,246,0.18);color:#60a5fa;display:flex;align-items:center;justify-content:center;\"><svg style=\"width:14px;height:14px;animation:gdrive-spin 0.8s linear infinite;\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\"><circle cx=\"12\" cy=\"12\" r=\"10\" stroke=\"currentColor\" stroke-opacity=\"0.25\"></circle><path d=\"M12 2a10 10 0 0 1 10 10\" stroke=\"currentColor\"></path></svg></div>";
+        if (descEl) {
+            descEl.innerHTML = "<span style=\"color:#60a5fa;font-weight:500;\">Тестируется в реальном времени...</span>";
+        }
+        if (metricEl) {
+            metricEl.innerHTML = "<span style=\"font-family:ui-monospace,monospace;font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(59,130,246,0.15);color:#60a5fa;border:1px solid rgba(59,130,246,0.3);\">В процессе...</span>";
+        }
+    } else if (state === "success") {
+        row.classList.add("gdrive-step-success");
+        if (iconEl) iconEl.innerHTML = "<div style=\"min-width:24px;height:24px;border-radius:50%;background:rgba(16,185,129,0.18);color:#10b981;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:13px;\">✓</div>";
+        if (descEl) {
+            descEl.textContent = details || "Пройдено успешно";
+            descEl.style.color = "#94a3b8";
+        }
+        if (metricEl) {
+            metricEl.innerHTML = metric ? "<span style=\"font-family:ui-monospace,monospace;font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(16,185,129,0.12);color:#34d399;border:1px solid rgba(16,185,129,0.25);\">" + metric + "</span>" : "";
+        }
+    } else if (state === "failed") {
+        row.classList.add("gdrive-step-failed");
+        if (iconEl) iconEl.innerHTML = "<div style=\"min-width:24px;height:24px;border-radius:50%;background:rgba(239,68,68,0.18);color:#ef4444;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:13px;\">✗</div>";
+        if (descEl) {
+            descEl.innerHTML = "<span style=\"color:#f87171;\">" + (details || "Ошибка выполнения") + "</span>";
+        }
+        if (metricEl) {
+            metricEl.innerHTML = "<span style=\"font-family:ui-monospace,monospace;font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);\">Сбой</span>";
+        }
+        if (recommendation) {
+            const recBox = document.getElementById("gdrive-live-recommendation");
+            if (recBox) {
+                recBox.innerHTML = "<div style=\"margin-top:12px;padding:12px 14px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:8px;color:#fde68a;font-size:12px;line-height:1.6;\">" +
+                    "<b style=\"color:#fbbf24;\">💡 Рекомендация:</b><br>" + recommendation.replace(/\\n/g, "<br>") + "</div>";
+            }
+        }
+    } else {
+        if (iconEl) iconEl.innerHTML = "<div style=\"min-width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,0.06);color:#64748b;display:flex;align-items:center;justify-content:center;font-size:11px;\">○</div>";
+        if (descEl) {
+            descEl.textContent = details || "Ожидание очереди...";
+            descEl.style.color = "#64748b";
+        }
+        if (metricEl) metricEl.innerHTML = "";
+    }
+}
+</script>
+</div>';
 
         return $html;
     }

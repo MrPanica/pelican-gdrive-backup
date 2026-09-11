@@ -44,24 +44,21 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
     public static function getDiagnosticTestAction(): Action
     {
         return Action::make('gdrive_diagnostic_test')
-            ->label('Тест Google Диска')
-            ->icon(TablerIcon::CheckupList)
+            ->label('Запустить тест Google Диска')
+            ->icon(TablerIcon::PlayerPlay)
             ->color('info')
-            ->modalHeading('Тестирование и диагностика Google Диска')
-            ->modalDescription('Сквозная проверка всех этапов: связь по SSH, утилиты ноды, авторизация Google Диска, создание архива, сжатие zstd, загрузка на Google Диск, скачивание обратно, разархивация и сверка целостности SHA-256.')
+            ->modalHeading('Тестирование и диагностика Google Диска (в реальном времени)')
+            ->modalDescription('Интерактивная сквозная проверка всех этапов: связь по SSH, утилиты ноды, авторизация Google Диска, создание архива, сжатие zstd, загрузка на Google Диск, скачивание обратно, разархивация и сверка целостности SHA-256.')
             ->modalSubmitAction(false)
             ->modalCancelActionLabel('Закрыть')
             ->schema(function () {
                 $service = app(GDriveBackupService::class);
-                $result = $service->runFullDiagnosticTest();
-                Cache::put('gdrive_last_diagnostic_result', $result, now()->addMinutes(30));
-                Cache::put('gdrive_last_diagnostic_time', now()->format('d.m.Y H:i:s'), now()->addMinutes(30));
-                $html = $service->renderDiagnosticHtml($result);
+                $cached = Cache::get('gdrive_last_diagnostic_result');
 
                 return [
                     Placeholder::make('diagnostic_results')
                         ->hiddenLabel()
-                        ->content(new HtmlString($html)),
+                        ->content(new HtmlString($service->renderRealtimeDiagnosticWidget($cached))),
                 ];
             });
     }
@@ -296,55 +293,14 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
     {
         return [
             Section::make('Проверка и тестирование Google Диска')
-                ->description('Сквозное тестирование цепочки бэкапа: выгрузка архива, скачивание обратно, разархивация и побитовая сверка целостности SHA-256')
+                ->description('Сквозное тестирование цепочки бэкапа: выгрузка архива, скачивание обратно, разархивация и побитовая сверка целостности SHA-256 в реальном времени')
                 ->schema([
-                    Actions::make([
-                        Action::make('run_gdrive_diagnostic_test')
-                            ->label('Запустить тест Google Диска')
-                            ->icon(TablerIcon::CheckupList)
-                            ->color('info')
-                            ->size('lg')
-                            ->action(function () {
-                                $service = app(GDriveBackupService::class);
-                                $result = $service->runFullDiagnosticTest();
-                                Cache::put('gdrive_last_diagnostic_result', $result, now()->addMinutes(30));
-                                Cache::put('gdrive_last_diagnostic_time', now()->format('d.m.Y H:i:s'), now()->addMinutes(30));
-
-                                if (!empty($result['overall_success'])) {
-                                    Notification::make()
-                                        ->title('Тест Google Диска успешно пройден!')
-                                        ->body('Архив 64 КБ сжат, выгружен, скачан обратно, разархивирован и проверен по SHA-256 (100% совпадение).')
-                                        ->success()
-                                        ->duration(10000)
-                                        ->send();
-                                } else {
-                                    Notification::make()
-                                        ->title('Ошибка тестирования Google Диска')
-                                        ->body($result['error'] ?? 'Обнаружена ошибка. Проверьте детали в блоке ниже.')
-                                        ->danger()
-                                        ->duration(15000)
-                                        ->send();
-                                }
-                            }),
-                    ]),
                     Placeholder::make('diag_status_view')
                         ->hiddenLabel()
                         ->content(function () {
+                            $service = app(GDriveBackupService::class);
                             $cached = Cache::get('gdrive_last_diagnostic_result');
-                            if ($cached) {
-                                $service = app(GDriveBackupService::class);
-                                $time = Cache::get('gdrive_last_diagnostic_time', 'ранее');
-                                return new HtmlString(
-                                    "<div style='margin-bottom:8px;font-size:12px;color:#9ca3af;'>Результат последнего теста (запущен в <b>{$time}</b>):</div>" .
-                                    $service->renderDiagnosticHtml($cached)
-                                );
-                            }
-
-                            return new HtmlString(
-                                '<div style="padding:16px; background:rgba(255,255,255,0.02); border:1px dashed #374151; border-radius:8px; color:#9ca3af; font-size:13px; text-align:center;">' .
-                                'Диагностика еще не запускалась. Нажмите кнопку <b>«Запустить тест Google Диска»</b> выше для сквозной проверки: SSH-связь, выгрузка архива, скачивание обратно, разархивация и побитовая сверка хэша SHA-256.' .
-                                '</div>'
-                            );
+                            return new HtmlString($service->renderRealtimeDiagnosticWidget($cached));
                         }),
                 ]),
 
@@ -356,8 +312,9 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
                         ->required()
                         ->helperText(new HtmlString(
                             'Имя настроенного в rclone подключения к Google Диску (по умолчанию <code>gdrive</code>).<br>' .
-                            '• Справка по настройке: <a href="https://rclone.org/drive/" target="_blank" style="color:#2563eb;text-decoration:underline;">Документация rclone Google Drive</a><br>' .
-                            '• Создать Client ID/Secret: <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:#2563eb;text-decoration:underline;">Google Cloud Console (Credentials)</a>'
+                            '• Справка по настройке rclone: <a href="https://rclone.org/drive/" target="_blank" style="color:#2563eb;text-decoration:underline;">Документация rclone Google Drive</a><br>' .
+                            '• 1. Включить Google Drive API: <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" style="color:#2563eb;text-decoration:underline;">Google API Library</a><br>' .
+                            '• 2. Создать Client ID / Secret: <a href="https://console.cloud.google.com/auth/clients" target="_blank" style="color:#2563eb;text-decoration:underline;">Google Auth Platform (Clients)</a>'
                         )),
                     TextInput::make('folder')
                         ->label('Корневая папка на Google Диске')
@@ -408,16 +365,26 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
                 ->schema([
                     Textarea::make('update_token')
                         ->label('Новый OAuth токен Google Drive (JSON)')
-                        ->rows(3)
+                        ->rows(4)
                         ->placeholder('{"access_token":"...","token_type":"Bearer","refresh_token":"...","expiry":"..."}')
                         ->helperText(new HtmlString(
-                            '<strong>Актуальная инструкция по настройке Google Auth Platform (2026):</strong><br>' .
-                            '1. В <a href="https://console.cloud.google.com/auth" target="_blank" style="color:#2563eb;text-decoration:underline;">Google Cloud Console (Google Auth Platform)</a> перейдите в <b>Branding</b>.<br>' .
-                            '2. Заполните обязательные поля: <code>App name</code> (например, <i>PGZ Storage</i> — слово <i>Rclone</i> использовать нельзя!), <code>User support email</code>, <code>Application home page</code> (<code>https://progameszet.ru</code>), <code>Application privacy policy link</code> (<code>https://progameszet.ru/help/privacy-policy/</code>), в <code>Authorized domains</code> добавьте <code>progameszet.ru</code>, и внизу в <code>Developer contact information</code> укажите ваш email.<br>' .
-                            '3. Нажмите <b>Save</b> внизу страницы Branding.<br>' .
-                            '4. Перейдите во вкладку <b>Audience</b> и нажмите <b>«Publish app»</b> (Опубликовать приложение) ➔ подтвердите (Confirm). Статус станет <b>In production</b>, и токен не будет сгорать каждые 7 дней.<br>' .
-                            '5. На локальном ПК запустите команду: <code>rclone authorize "drive" "&lt;Client_ID&gt;" "&lt;Client_Secret&gt;"</code>, подтвердите доступ в браузере и вставьте полученную JSON-строку в это поле.<br>' .
-                            '6. Нажмите <b>Сохранить</b> внизу формы — токен автоматически обновится на сервере ноды.'
+                            '<div style="line-height:1.7;font-size:12px;">' .
+                            '<b style="color:#38bdf8;">Актуальная пошаговая инструкция Google Auth Platform (2026):</b><br>' .
+                            '<b>Шаг 1.</b> Включите API: перейдите в <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" style="color:#2563eb;text-decoration:underline;">Google Drive API</a> и нажмите <b>Enable (Включить)</b>.<br>' .
+                            '<b>Шаг 2.</b> Оформление приложения: перейдите в <a href="https://console.cloud.google.com/auth/branding" target="_blank" style="color:#2563eb;text-decoration:underline;">Google Auth Platform ➔ Branding</a>. Заполните обязательные поля:<br>' .
+                            '&nbsp;&nbsp;• <code>App name</code>: любое понятное название (например, <i>PGZ Storage</i> — слова <i>Google</i> и <i>Rclone</i> использовать запрещено).<br>' .
+                            '&nbsp;&nbsp;• <code>User support email</code>: выберите ваш Google email.<br>' .
+                            '&nbsp;&nbsp;• <code>Application home page</code>: URL вашего проекта (например, <code>https://progameszet.ru</code>).<br>' .
+                            '&nbsp;&nbsp;• <code>Application privacy policy link</code>: ссылка на политику конфиденциальности (например, <code>https://progameszet.ru/help/privacy-policy/</code>).<br>' .
+                            '&nbsp;&nbsp;• <code>Authorized domains</code>: нажмите <i>+ Add domain</i> и введите ваш домен (например, <code>progameszet.ru</code>).<br>' .
+                            '&nbsp;&nbsp;• <code>Developer contact information</code>: укажите ваш email адрес и нажмите <b>Save</b> внизу страницы.<br>' .
+                            '<b>Шаг 3.</b> Публикация приложения: перейдите в <a href="https://console.cloud.google.com/auth/audience" target="_blank" style="color:#2563eb;text-decoration:underline;">Google Auth Platform ➔ Audience</a> и в блоке <i>Publishing status</i> нажмите <b>«Publish app» (Опубликовать приложение)</b> ➔ подтвердите (Confirm). Статус изменится на <b>In production</b> (благодаря этому refresh_token станет бессрочным и не будет сгорать через 7 дней).<br>' .
+                            '<b>Шаг 4.</b> Создание ключей: перейдите в <a href="https://console.cloud.google.com/auth/clients" target="_blank" style="color:#2563eb;text-decoration:underline;">Google Auth Platform ➔ Clients</a> (или Credentials) ➔ <b>Create Client</b> ➔ тип <b>Desktop app (Приложение для ПК)</b>. Скопируйте <code>Client ID</code> и <code>Client Secret</code>.<br>' .
+                            '<b>Шаг 5.</b> Получение токена: на своем локальном ПК с установленным rclone выполните в командной строке / PowerShell:<br>' .
+                            '&nbsp;&nbsp;<code>rclone authorize "drive" "&lt;Client_ID&gt;" "&lt;Client_Secret&gt;"</code><br>' .
+                            '&nbsp;&nbsp;В открывшемся браузере выберите ваш аккаунт Google ➔ нажмите <i>«Дополнительно» (Advanced) ➔ «Перейти на страницу (небезопасно)» ➔ «Продолжить»</i>.<br>' .
+                            '<b>Шаг 6.</b> Скопируйте из консоли полученную строку с токеном (открывается и закрывается фигурными скобками <code>{...}</code>), вставьте в поле выше и нажмите <b>Сохранить</b> внизу формы. Токен сразу запишется в <code>rclone.conf</code> на игровой ноде.' .
+                            '</div>'
                         )),
                 ]),
 
