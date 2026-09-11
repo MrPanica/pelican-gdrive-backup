@@ -645,6 +645,25 @@ class GDriveBackupService
                     }
                     echo "data: " . $rawJson . "\n\n";
                     flush();
+
+                    if ($event && ($event['step'] ?? '') === 'tools' && ($event['state'] ?? '') === 'success' && !isset($fullResult['steps']['auth'])) {
+                        $authSuccessDetails = $stepsDefs['auth']['success_desc'] ?? 'Google Drive remote verified and OAuth token is valid';
+                        $fullResult['steps']['auth'] = [
+                            'status' => 'success',
+                            'title' => $stepsDefs['auth']['title'],
+                            'details' => $authSuccessDetails,
+                            'metric' => 'OK',
+                            'error' => null,
+                        ];
+                        echo "data: " . json_encode([
+                            'step' => 'auth',
+                            'state' => 'success',
+                            'title' => $stepsDefs['auth']['title'],
+                            'details' => $authSuccessDetails,
+                            'metric' => 'OK',
+                        ], JSON_UNESCAPED_UNICODE) . "\n\n";
+                        flush();
+                    }
                 } elseif (str_starts_with($line, 'JSON:')) {
                     $finalJson = json_decode(substr($line, 5), true);
                 }
@@ -653,6 +672,15 @@ class GDriveBackupService
 
             $isSuccess = !empty($finalJson['success']);
             $fullResult['overall_success'] = $isSuccess;
+            if ($isSuccess && !isset($fullResult['steps']['auth'])) {
+                $fullResult['steps']['auth'] = [
+                    'status' => 'success',
+                    'title' => $stepsDefs['auth']['title'],
+                    'details' => $stepsDefs['auth']['success_desc'] ?? 'Google Drive remote verified and OAuth token is valid',
+                    'metric' => 'OK',
+                    'error' => null,
+                ];
+            }
             if (!$isSuccess) {
                 $fullResult['error'] = $finalJson['error'] ?? 'Обнаружена ошибка при тестировании Google Диска';
                 if (str_contains($fullResult['error'], 'invalid_grant') || str_contains($fullResult['error'], 'token expired')) {
