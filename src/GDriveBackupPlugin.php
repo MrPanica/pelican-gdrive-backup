@@ -49,13 +49,13 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
             ->color('info')
             ->modalHeading('Тестирование и диагностика Google Диска')
             ->modalDescription('Сквозная проверка всех этапов: связь по SSH, утилиты ноды, авторизация Google Диска, создание архива, сжатие zstd, загрузка на Google Диск, скачивание обратно, разархивация и сверка целостности SHA-256.')
-            ->modalSubmitActionLabel('Повторить тест')
+            ->modalSubmitAction(false)
             ->modalCancelActionLabel('Закрыть')
             ->schema(function () {
                 $service = app(GDriveBackupService::class);
-                // Force fresh run on opening modal and refresh cache
                 $result = $service->runFullDiagnosticTest();
-                Cache::put('gdrive_last_diagnostic_result', $result, now()->addMinutes(15));
+                Cache::put('gdrive_last_diagnostic_result', $result, now()->addMinutes(30));
+                Cache::put('gdrive_last_diagnostic_time', now()->format('d.m.Y H:i:s'), now()->addMinutes(30));
                 $html = $service->renderDiagnosticHtml($result);
 
                 return [
@@ -63,24 +63,6 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
                         ->hiddenLabel()
                         ->content(new HtmlString($html)),
                 ];
-            })
-            ->action(function () {
-                $service = app(GDriveBackupService::class);
-                $result = $service->runFullDiagnosticTest();
-                Cache::put('gdrive_last_diagnostic_result', $result, now()->addMinutes(15));
-                if (!empty($result['overall_success'])) {
-                    Notification::make()
-                        ->title('Тест Google Диска успешно пройден!')
-                        ->body('Все этапы, включая выгрузку, скачивание, разархивацию и сверку хэша SHA-256, завершены успешно.')
-                        ->success()
-                        ->send();
-                } else {
-                    Notification::make()
-                        ->title('Ошибка при проверке Google Диска')
-                        ->body($result['error'] ?? 'Обнаружена ошибка. Откройте окно теста для просмотра рекомендаций.')
-                        ->danger()
-                        ->send();
-                }
             });
     }
 
@@ -315,28 +297,54 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
         return [
             Section::make('Проверка и тестирование Google Диска')
                 ->description('Сквозное тестирование цепочки бэкапа: выгрузка архива, скачивание обратно, разархивация и побитовая сверка целостности SHA-256')
-                ->headerActions([
-                    static::getDiagnosticTestAction()
-                        ->label('Запустить тест Google Диска')
-                        ->icon(TablerIcon::CheckupList)
-                        ->color('info'),
-                ])
                 ->schema([
                     Actions::make([
-                        static::getDiagnosticTestAction()
+                        Action::make('run_gdrive_diagnostic_test')
                             ->label('Запустить тест Google Диска')
                             ->icon(TablerIcon::CheckupList)
                             ->color('info')
-                            ->size('lg'),
+                            ->size('lg')
+                            ->action(function () {
+                                $service = app(GDriveBackupService::class);
+                                $result = $service->runFullDiagnosticTest();
+                                Cache::put('gdrive_last_diagnostic_result', $result, now()->addMinutes(30));
+                                Cache::put('gdrive_last_diagnostic_time', now()->format('d.m.Y H:i:s'), now()->addMinutes(30));
+
+                                if (!empty($result['overall_success'])) {
+                                    Notification::make()
+                                        ->title('Тест Google Диска успешно пройден!')
+                                        ->body('Архив 64 КБ сжат, выгружен, скачан обратно, разархивирован и проверен по SHA-256 (100% совпадение).')
+                                        ->success()
+                                        ->duration(10000)
+                                        ->send();
+                                } else {
+                                    Notification::make()
+                                        ->title('Ошибка тестирования Google Диска')
+                                        ->body($result['error'] ?? 'Обнаружена ошибка. Проверьте детали в блоке ниже.')
+                                        ->danger()
+                                        ->duration(15000)
+                                        ->send();
+                                }
+                            }),
                     ]),
                     Placeholder::make('diag_status_view')
                         ->hiddenLabel()
                         ->content(function () {
-                            $service = app(GDriveBackupService::class);
-                            $result = Cache::remember('gdrive_last_diagnostic_result', 300, function () use ($service) {
-                                return $service->runFullDiagnosticTest();
-                            });
-                            return new HtmlString($service->renderDiagnosticHtml($result));
+                            $cached = Cache::get('gdrive_last_diagnostic_result');
+                            if ($cached) {
+                                $service = app(GDriveBackupService::class);
+                                $time = Cache::get('gdrive_last_diagnostic_time', 'ранее');
+                                return new HtmlString(
+                                    "<div style='margin-bottom:8px;font-size:12px;color:#9ca3af;'>Результат последнего теста (запущен в <b>{$time}</b>):</div>" .
+                                    $service->renderDiagnosticHtml($cached)
+                                );
+                            }
+
+                            return new HtmlString(
+                                '<div style="padding:16px; background:rgba(255,255,255,0.02); border:1px dashed #374151; border-radius:8px; color:#9ca3af; font-size:13px; text-align:center;">' .
+                                'Диагностика еще не запускалась. Нажмите кнопку <b>«Запустить тест Google Диска»</b> выше для сквозной проверки: SSH-связь, выгрузка архива, скачивание обратно, разархивация и побитовая сверка хэша SHA-256.' .
+                                '</div>'
+                            );
                         }),
                 ]),
 
