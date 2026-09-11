@@ -14,7 +14,9 @@ use Filament\Contracts\Plugin;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\CheckboxList;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
@@ -34,6 +36,49 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
         return 'pelican-gdrive-backup';
     }
 
+    /**
+     * Create reusable diagnostic test action for tables.
+     */
+    public static function getDiagnosticTestAction(): Action
+    {
+        return Action::make('gdrive_diagnostic_test')
+            ->label('Тест Google Диска')
+            ->icon(TablerIcon::CheckupList)
+            ->color('info')
+            ->modalHeading('Тестирование и диагностика Google Диска')
+            ->modalDescription('Сквозная проверка всех этапов: связь по SSH, утилиты ноды, авторизация Google Диска, создание архива, сжатие zstd, загрузка на Google Диск, скачивание обратно, разархивация и сверка целостности SHA-256.')
+            ->modalSubmitActionLabel('Повторить тест')
+            ->modalCancelActionLabel('Закрыть')
+            ->schema(function () {
+                $service = app(GDriveBackupService::class);
+                $result = $service->runFullDiagnosticTest();
+                $html = $service->renderDiagnosticHtml($result);
+
+                return [
+                    Placeholder::make('diagnostic_results')
+                        ->hiddenLabel()
+                        ->content(new HtmlString($html)),
+                ];
+            })
+            ->action(function () {
+                $service = app(GDriveBackupService::class);
+                $result = $service->runFullDiagnosticTest();
+                if (!empty($result['overall_success'])) {
+                    Notification::make()
+                        ->title('Тест Google Диска успешно пройден!')
+                        ->body('Все этапы, включая выгрузку, скачивание, разархивацию и сверку хэша SHA-256, завершены успешно.')
+                        ->success()
+                        ->send();
+                } else {
+                    Notification::make()
+                        ->title('Ошибка при проверке Google Диска')
+                        ->body($result['error'] ?? 'Обнаружена ошибка. Откройте окно теста для просмотра рекомендаций.')
+                        ->danger()
+                        ->send();
+                }
+            });
+    }
+
     public function register(Panel $panel): void
     {
         if ($panel->getId() === 'admin') {
@@ -45,6 +90,8 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
             // Add actions to Backup Hosts table
             BackupHostResource::modifyTable(function (Table $table) {
                 return $table->pushToolbarActions([
+                    static::getDiagnosticTestAction(),
+
                     Action::make('gdrive_system_backups_link')
                         ->label('Все бэкапы системы')
                         ->icon(TablerIcon::Server)
@@ -182,6 +229,8 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
                             }),
                     ])
                     ->pushToolbarActions([
+                        static::getDiagnosticTestAction(),
+
                         Action::make('gdrive_server_backup')
                             ->label('Бэкап на Google Диск')
                             ->icon(TablerIcon::BrandGoogleDrive)
@@ -239,7 +288,7 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
         $path = $this->getSettingsFilePath();
         $defaults = config('gdrive-backup');
 
-        // Default auto_backup_servers to all servers on node 2 (or all servers) if not set yet
+        // Default auto_backup_servers to all servers if not set yet
         if (!isset($defaults['auto_backup_servers']) || empty($defaults['auto_backup_servers'])) {
             try {
                 $defaults['auto_backup_servers'] = Server::pluck('id')->toArray();
@@ -287,6 +336,47 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
                             '• Управление корзиной Google Диска: <a href="https://drive.google.com/drive/trash" target="_blank" style="color:#2563eb;text-decoration:underline;">Корзина Google Drive</a>'
                         )),
                 ])->columns(3),
+
+            Section::make('Подключение к игровой ноде (Node Connection)')
+                ->description('Параметры SSH подключения панели управления к игровой ноде для выполнения бэкапов')
+                ->schema([
+                    TextInput::make('node_host')
+                        ->label('IP адрес / хост ноды')
+                        ->default('87.228.56.213')
+                        ->required()
+                        ->helperText('IP адрес сервера ноды (для Node 2: <code>87.228.56.213</code>)'),
+                    TextInput::make('node_port')
+                        ->label('SSH порт ноды')
+                        ->numeric()
+                        ->default(228)
+                        ->required()
+                        ->helperText('Пользовательский порт SSH ноды (для Node 2: <code>228</code>)'),
+                    TextInput::make('node_user')
+                        ->label('SSH пользователь')
+                        ->default('root')
+                        ->required()
+                        ->helperText('Пользователь SSH с правами root'),
+                    TextInput::make('node_key_path')
+                        ->label('Путь к SSH ключу на веб-сервере')
+                        ->default('/var/www/.ssh/id_ed25519')
+                        ->required()
+                        ->helperText('Путь к приватному ключу (по умолчанию <code>/var/www/.ssh/id_ed25519</code>)'),
+                ])->columns(4),
+
+            Section::make('Авторизация Google Drive (Обновление OAuth токена)')
+                ->description('Быстрое обновление токена Google Drive без необходимости ручной правки rclone.conf на сервере ноды')
+                ->schema([
+                    Textarea::make('update_token')
+                        ->label('Новый OAuth токен Google Drive (JSON)')
+                        ->rows(3)
+                        ->placeholder('{"access_token":"...","token_type":"Bearer","refresh_token":"...","expiry":"..."}')
+                        ->helperText(new HtmlString(
+                            '<strong>Инструкция по обновлению токена Google Drive:</strong><br>' .
+                            '1. Чтобы токен не истекал через 7 дней, в <a href="https://console.cloud.google.com/apis/credentials/consent" target="_blank" style="color:#2563eb;text-decoration:underline;">Google Cloud Console (OAuth consent screen)</a> нажмите кнопку <b>«PUBLISH APP» (Опубликовать)</b>.<br>' .
+                            '2. На ПК с установленным rclone выполните <code>rclone authorize "drive"</code>, авторизуйтесь в браузере и вставьте полученный JSON токена в это поле.<br>' .
+                            '3. Либо подключитесь к ноде по SSH и выполните: <code>rclone config reconnect gdrive:</code>.'
+                        )),
+                ]),
 
             Section::make('Автоматическое резервное копирование по расписанию')
                 ->description('Настройка ежедневного резервного копирования выбранных серверов и системы в Google Диск')
@@ -343,6 +433,29 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
 
     public function saveSettings(array $data): void
     {
+        $service = app(GDriveBackupService::class);
+
+        // Handle token update if provided
+        $updateToken = trim((string) ($data['update_token'] ?? ''));
+        unset($data['update_token']); // Do not store raw token string in general settings json
+
+        if (!empty($updateToken)) {
+            $tokenUpdated = $service->updateRcloneToken($updateToken);
+            if ($tokenUpdated) {
+                Notification::make()
+                    ->title('Токен Google Drive успешно обновлен')
+                    ->body('Конфигурация rclone на игровой ноде обновлена.')
+                    ->success()
+                    ->send();
+            } else {
+                Notification::make()
+                    ->title('Ошибка обновления токена')
+                    ->body('Не удалось распознать формат токена Google Drive. Проверьте JSON токена.')
+                    ->danger()
+                    ->send();
+            }
+        }
+
         $path = $this->getSettingsFilePath();
         File::ensureDirectoryExists(dirname($path));
         File::put($path, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
@@ -353,7 +466,6 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
 
         // Apply configuration and cron to the game node
         try {
-            $service = app(GDriveBackupService::class);
             $enabled = (bool) ($data['auto_backup_enabled'] ?? true);
             $time = (string) ($data['auto_backup_time'] ?? '04:30');
             $backupSystem = (bool) ($data['auto_backup_system'] ?? true);

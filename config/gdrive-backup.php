@@ -30,8 +30,8 @@ return [
     | Target Gaming Node Connection
     |--------------------------------------------------------------------------
     */
-    'node_host' => env('GDRIVE_BACKUP_NODE_HOST', '127.0.0.1'),
-    'node_port' => (int) env('GDRIVE_BACKUP_NODE_PORT', 22),
+    'node_host' => env('GDRIVE_BACKUP_NODE_HOST', '87.228.56.213'),
+    'node_port' => (int) env('GDRIVE_BACKUP_NODE_PORT', 228),
     'node_user' => env('GDRIVE_BACKUP_NODE_USER', 'root'),
     'node_key_path' => env('GDRIVE_BACKUP_NODE_KEY', '/var/www/.ssh/id_ed25519'),
 

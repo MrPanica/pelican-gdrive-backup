@@ -12,6 +12,7 @@ use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use ProGamesZet\GDriveBackup\Filament\Resources\SystemBackupResource\Pages\ListSystemBackups;
+use ProGamesZet\GDriveBackup\GDriveBackupPlugin;
 use ProGamesZet\GDriveBackup\Models\SystemBackup;
 use ProGamesZet\GDriveBackup\Services\GDriveBackupService;
 
@@ -140,6 +141,8 @@ class SystemBackupResource extends Resource
                     }),
             ])
             ->toolbarActions([
+                GDriveBackupPlugin::getDiagnosticTestAction(),
+
                 Action::make('create_system_backup')
                     ->label('Создать полный бэкап системы')
                     ->icon(TablerIcon::BrandGoogleDrive)
