@@ -21,6 +21,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Panel;
+use Filament\View\PanelsRenderHook;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Section;
 use Filament\Tables\Columns\TextColumn;
@@ -65,6 +66,11 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
 
     public function register(Panel $panel): void
     {
+        $panel->renderHook(
+            PanelsRenderHook::BODY_END,
+            fn () => new HtmlString(GDriveBackupService::getWidgetScriptHtml())
+        );
+
         if ($panel->getId() === 'admin') {
             // Register System Backups resource in Admin sidebar under Advanced
             $panel->resources([

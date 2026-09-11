@@ -659,6 +659,7 @@ class GDriveBackupService
         $isCached = !empty($cached) && isset($cached['steps']);
         $lastTime = $cached['started_at'] ?? Cache::get('gdrive_last_diagnostic_time', null);
         $overallSuccess = $cached['overall_success'] ?? null;
+        $b64Js = base64_encode(self::getWidgetScriptJs());
 
         $statusBadgeHtml = '';
         if ($isCached && $lastTime) {
@@ -688,7 +689,8 @@ class GDriveBackupService
     <!-- Control Header with Big Test Button -->
     <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; margin-bottom: 16px; padding: 14px 18px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px;">
         <div>
-            <button type="button" id="gdrive-start-test-btn" onclick="runGDriveLiveTest()"
+            <button type="button" id="gdrive-start-test-btn"
+                onclick="if(window.runGDriveLiveTest){window.runGDriveLiveTest();}else{var s=document.createElement(\'script\');s.textContent=atob(\'' . $b64Js . '\');document.head.appendChild(s);if(window.runGDriveLiveTest)window.runGDriveLiveTest();}"
                 style="display: inline-flex; align-items: center; gap: 10px; padding: 11px 24px; background: #0284c7; color: #ffffff; font-weight: 600; font-size: 14px; border: none; border-radius: 8px; cursor: pointer; box-shadow: 0 2px 8px rgba(2,132,199,0.35); transition: all 0.2s;">
                 <span id="gdrive-btn-spinner" style="display: none;">
                     <svg style="width: 18px; height: 18px; animation: gdrive-spin 0.8s linear infinite;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -773,145 +775,153 @@ class GDriveBackupService
         $html .= '<div id="gdrive-live-summary">' . $summaryHtml . '</div>';
         $html .= '<div id="gdrive-live-recommendation"></div>';
 
-        // Realtime Client JavaScript
+        $b64Js = base64_encode(self::getWidgetScriptJs());
         $html .= '
-<script>
-function runGDriveLiveTest() {
-    const btn = document.getElementById("gdrive-start-test-btn");
-    const btnText = document.getElementById("gdrive-btn-label");
-    const spinner = document.getElementById("gdrive-btn-spinner");
-    const icon = document.getElementById("gdrive-btn-icon");
-    const statusBadge = document.getElementById("gdrive-live-status-badge");
-    const summary = document.getElementById("gdrive-live-summary");
-    const rec = document.getElementById("gdrive-live-recommendation");
-
-    if (!btn) return;
-
-    btn.disabled = true;
-    btn.style.opacity = "0.75";
-    btn.style.cursor = "not-allowed";
-    if (spinner) spinner.style.display = "inline-block";
-    if (icon) icon.style.display = "none";
-    if (btnText) btnText.textContent = "Тестирование выполняется...";
-    if (statusBadge) statusBadge.innerHTML = "<span style=\"color:#60a5fa;animation:gdrive-pulse 1.2s infinite;font-weight:600;\">⏳ Тестирование в реальном времени...</span>";
-    if (summary) summary.innerHTML = "";
-    if (rec) rec.innerHTML = "";
-
-    const stepKeys = ["ssh", "tools", "create", "compress", "upload", "download", "decompress", "integrity", "cleanup"];
-    stepKeys.forEach(function(key) {
-        setGDriveStepState(key, "pending", "В очереди проверки...");
-    });
-
-    try {
-        const es = new EventSource("/admin/gdrive-backup/stream-test", { withCredentials: true });
-
-        es.onmessage = function(e) {
-            try {
-                const data = JSON.parse(e.data);
-                if (data.step) {
-                    setGDriveStepState(data.step, data.state, data.details || data.error, data.metric, data.recommendation);
-                }
-                if (data.done) {
-                    es.close();
-                    btn.disabled = false;
-                    btn.style.opacity = "1";
-                    btn.style.cursor = "pointer";
-                    if (spinner) spinner.style.display = "none";
-                    if (icon) icon.style.display = "inline-block";
-                    if (btnText) btnText.textContent = "Запустить тест повторно";
-
-                    if (data.overall_success) {
-                        const dur = data.duration ? " (" + data.duration + " сек)" : "";
-                        if (statusBadge) statusBadge.innerHTML = "<span style=\"color:#10b981;font-weight:600;\">✓ Все 9 этапов пройдены" + dur + "</span>";
-                        if (summary) summary.innerHTML = "<div style=\"margin-top:14px;padding:12px 16px;background:rgba(16,185,129,0.12);border:1px solid #10b981;border-radius:8px;color:#34d399;display:flex;align-items:center;gap:10px;font-weight:600;font-size:13px;\">" +
-                            "<span style=\"font-size:18px;\">✓</span>" +
-                            "<span>Все 9 этапов успешно пройдены! Google Диск полностью исправен и готов к созданию резервных копий.</span>" +
-                            "</div>";
-                    } else {
-                        if (statusBadge) statusBadge.innerHTML = "<span style=\"color:#ef4444;font-weight:600;\">✗ Ошибка при тестировании</span>";
-                        if (summary) summary.innerHTML = "<div style=\"margin-top:14px;padding:12px 16px;background:rgba(239,68,68,0.12);border:1px solid #ef4444;border-radius:8px;color:#fca5a5;font-size:13px;\">" +
-                            "<div style=\"font-weight:600;margin-bottom:4px;\">❌ Тестирование завершилось с ошибкой</div>" +
-                            "<div>" + (data.error || "Один из этапов завершился со сбоем") + "</div>" +
-                            "</div>";
-                    }
-                }
-            } catch(err) {
-                console.error("SSE parse error", err, e.data);
-            }
-        };
-
-        es.onerror = function(err) {
-            es.close();
-            btn.disabled = false;
-            btn.style.opacity = "1";
-            btn.style.cursor = "pointer";
-            if (spinner) spinner.style.display = "none";
-            if (icon) icon.style.display = "inline-block";
-            if (btnText) btnText.textContent = "Запустить тест повторно";
-            if (statusBadge) statusBadge.innerHTML = "<span style=\"color:#ef4444;\">Ошибка связи при тестировании</span>";
-        };
-    } catch(err) {
-        console.error("EventSource failed", err);
-    }
-}
-
-function setGDriveStepState(stepKey, state, details, metric, recommendation) {
-    const row = document.getElementById("gdrive-row-" + stepKey);
-    const iconEl = document.getElementById("icon-" + stepKey);
-    const descEl = document.getElementById("desc-" + stepKey);
-    const metricEl = document.getElementById("metric-" + stepKey);
-    if (!row) return;
-
-    row.classList.remove("gdrive-step-running", "gdrive-step-success", "gdrive-step-failed");
-
-    if (state === "running") {
-        row.classList.add("gdrive-step-running");
-        if (iconEl) iconEl.innerHTML = "<div style=\"min-width:24px;height:24px;border-radius:50%;background:rgba(59,130,246,0.18);color:#60a5fa;display:flex;align-items:center;justify-content:center;\"><svg style=\"width:14px;height:14px;animation:gdrive-spin 0.8s linear infinite;\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\"><circle cx=\"12\" cy=\"12\" r=\"10\" stroke=\"currentColor\" stroke-opacity=\"0.25\"></circle><path d=\"M12 2a10 10 0 0 1 10 10\" stroke=\"currentColor\"></path></svg></div>";
-        if (descEl) {
-            descEl.innerHTML = "<span style=\"color:#60a5fa;font-weight:500;\">Тестируется в реальном времени...</span>";
-        }
-        if (metricEl) {
-            metricEl.innerHTML = "<span style=\"font-family:ui-monospace,monospace;font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(59,130,246,0.15);color:#60a5fa;border:1px solid rgba(59,130,246,0.3);\">В процессе...</span>";
-        }
-    } else if (state === "success") {
-        row.classList.add("gdrive-step-success");
-        if (iconEl) iconEl.innerHTML = "<div style=\"min-width:24px;height:24px;border-radius:50%;background:rgba(16,185,129,0.18);color:#10b981;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:13px;\">✓</div>";
-        if (descEl) {
-            descEl.textContent = details || "Пройдено успешно";
-            descEl.style.color = "#94a3b8";
-        }
-        if (metricEl) {
-            metricEl.innerHTML = metric ? "<span style=\"font-family:ui-monospace,monospace;font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(16,185,129,0.12);color:#34d399;border:1px solid rgba(16,185,129,0.25);\">" + metric + "</span>" : "";
-        }
-    } else if (state === "failed") {
-        row.classList.add("gdrive-step-failed");
-        if (iconEl) iconEl.innerHTML = "<div style=\"min-width:24px;height:24px;border-radius:50%;background:rgba(239,68,68,0.18);color:#ef4444;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:13px;\">✗</div>";
-        if (descEl) {
-            descEl.innerHTML = "<span style=\"color:#f87171;\">" + (details || "Ошибка выполнения") + "</span>";
-        }
-        if (metricEl) {
-            metricEl.innerHTML = "<span style=\"font-family:ui-monospace,monospace;font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);\">Сбой</span>";
-        }
-        if (recommendation) {
-            const recBox = document.getElementById("gdrive-live-recommendation");
-            if (recBox) {
-                recBox.innerHTML = "<div style=\"margin-top:12px;padding:12px 14px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:8px;color:#fde68a;font-size:12px;line-height:1.6;\">" +
-                    "<b style=\"color:#fbbf24;\">💡 Рекомендация:</b><br>" + recommendation.replace(/\\n/g, "<br>") + "</div>";
-            }
-        }
-    } else {
-        if (iconEl) iconEl.innerHTML = "<div style=\"min-width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,0.06);color:#64748b;display:flex;align-items:center;justify-content:center;font-size:11px;\">○</div>";
-        if (descEl) {
-            descEl.textContent = details || "Ожидание очереди...";
-            descEl.style.color = "#64748b";
-        }
-        if (metricEl) metricEl.innerHTML = "";
-    }
-}
-</script>
+<img src="data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\'></svg>" style="display:none;" onload="(function(){ if(!window.runGDriveLiveTest){ var s=document.createElement(\'script\'); s.textContent=atob(\'' . $b64Js . '\'); document.head.appendChild(s); } })();">
+' . self::getWidgetScriptHtml() . '
 </div>';
 
         return $html;
+    }
+
+    /**
+     * JavaScript logic for diagnostic widget.
+     */
+    public static function getWidgetScriptJs(): string
+    {
+        return <<<'JS'
+(function() {
+    window.setGDriveStepState = function(stepKey, state, details, metric, recommendation) {
+        var row = document.getElementById("gdrive-row-" + stepKey);
+        var iconEl = document.getElementById("icon-" + stepKey);
+        var descEl = document.getElementById("desc-" + stepKey);
+        var metricEl = document.getElementById("metric-" + stepKey);
+        if (!row) return;
+
+        row.classList.remove("gdrive-step-running", "gdrive-step-success", "gdrive-step-failed");
+
+        if (state === "running") {
+            row.classList.add("gdrive-step-running");
+            if (iconEl) iconEl.innerHTML = '<div style="min-width:24px;height:24px;border-radius:50%;background:rgba(59,130,246,0.18);color:#60a5fa;display:flex;align-items:center;justify-content:center;"><svg style="width:14px;height:14px;animation:gdrive-spin 0.8s linear infinite;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-opacity="0.25"></circle><path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor"></path></svg></div>';
+            if (descEl) descEl.innerHTML = '<span style="color:#60a5fa;font-weight:500;">Тестируется в реальном времени...</span>';
+            if (metricEl) metricEl.innerHTML = '<span style="font-family:ui-monospace,monospace;font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(59,130,246,0.15);color:#60a5fa;border:1px solid rgba(59,130,246,0.3);">В процессе...</span>';
+        } else if (state === "success") {
+            row.classList.add("gdrive-step-success");
+            if (iconEl) iconEl.innerHTML = '<div style="min-width:24px;height:24px;border-radius:50%;background:rgba(16,185,129,0.18);color:#10b981;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:13px;">✓</div>';
+            if (descEl) {
+                descEl.textContent = details || "Пройдено успешно";
+                descEl.style.color = "#94a3b8";
+            }
+            if (metricEl) metricEl.innerHTML = metric ? '<span style="font-family:ui-monospace,monospace;font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(16,185,129,0.12);color:#34d399;border:1px solid rgba(16,185,129,0.25);">' + metric + '</span>' : '';
+        } else if (state === "failed") {
+            row.classList.add("gdrive-step-failed");
+            if (iconEl) iconEl.innerHTML = '<div style="min-width:24px;height:24px;border-radius:50%;background:rgba(239,68,68,0.18);color:#ef4444;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:13px;">✗</div>';
+            if (descEl) descEl.innerHTML = '<span style="color:#f87171;">' + (details || "Ошибка выполнения") + '</span>';
+            if (metricEl) metricEl.innerHTML = '<span style="font-family:ui-monospace,monospace;font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);">Сбой</span>';
+            if (recommendation) {
+                var recBox = document.getElementById("gdrive-live-recommendation");
+                if (recBox) {
+                    recBox.innerHTML = '<div style="margin-top:12px;padding:12px 14px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:8px;color:#fde68a;font-size:12px;line-height:1.6;"><b style="color:#fbbf24;">💡 Рекомендация:</b><br>' + recommendation.replace(/\n/g, "<br>") + '</div>';
+                }
+            }
+        } else {
+            if (iconEl) iconEl.innerHTML = '<div style="min-width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,0.06);color:#64748b;display:flex;align-items:center;justify-content:center;font-size:11px;">○</div>';
+            if (descEl) {
+                descEl.textContent = details || "В очереди проверки...";
+                descEl.style.color = "#64748b";
+            }
+            if (metricEl) metricEl.innerHTML = "";
+        }
+    };
+
+    window.runGDriveLiveTest = function() {
+        var btn = document.getElementById("gdrive-start-test-btn");
+        var btnText = document.getElementById("gdrive-btn-label");
+        var spinner = document.getElementById("gdrive-btn-spinner");
+        var icon = document.getElementById("gdrive-btn-icon");
+        var statusBadge = document.getElementById("gdrive-live-status-badge");
+        var summary = document.getElementById("gdrive-live-summary");
+        var rec = document.getElementById("gdrive-live-recommendation");
+
+        if (!btn) return;
+
+        btn.disabled = true;
+        btn.style.opacity = "0.75";
+        btn.style.cursor = "not-allowed";
+        if (spinner) spinner.style.display = "inline-block";
+        if (icon) icon.style.display = "none";
+        if (btnText) btnText.textContent = "Тестирование выполняется...";
+        if (statusBadge) statusBadge.innerHTML = '<span style="color:#60a5fa;animation:gdrive-pulse 1.2s infinite;font-weight:600;">⏳ Тестирование в реальном времени...</span>';
+        if (summary) summary.innerHTML = "";
+        if (rec) rec.innerHTML = "";
+
+        var stepKeys = ["ssh", "tools", "create", "compress", "upload", "download", "decompress", "integrity", "cleanup"];
+        stepKeys.forEach(function(key) {
+            window.setGDriveStepState(key, "pending", "В очереди проверки...");
+        });
+
+        try {
+            var es = new EventSource("/admin/gdrive-backup/stream-test", { withCredentials: true });
+
+            es.onmessage = function(e) {
+                try {
+                    var data = JSON.parse(e.data);
+                    if (data.step) {
+                        window.setGDriveStepState(data.step, data.state, data.details || data.error, data.metric, data.recommendation);
+                    }
+                    if (data.done) {
+                        es.close();
+                        btn.disabled = false;
+                        btn.style.opacity = "1";
+                        btn.style.cursor = "pointer";
+                        if (spinner) spinner.style.display = "none";
+                        if (icon) icon.style.display = "inline-block";
+                        if (btnText) btnText.textContent = "Запустить тест повторно";
+
+                        if (data.overall_success) {
+                            var dur = data.duration ? " (" + data.duration + " сек)" : "";
+                            if (statusBadge) statusBadge.innerHTML = '<span style="color:#10b981;font-weight:600;">✓ Все 9 этапов пройдены' + dur + '</span>';
+                            if (summary) summary.innerHTML = '<div style="margin-top:14px;padding:12px 16px;background:rgba(16,185,129,0.12);border:1px solid #10b981;border-radius:8px;color:#34d399;display:flex;align-items:center;gap:10px;font-weight:600;font-size:13px;">' +
+                                '<span style="font-size:18px;">✓</span>' +
+                                '<span>Все 9 этапов успешно пройдены! Google Диск полностью исправен и готов к созданию резервных копий.</span>' +
+                                '</div>';
+                        } else {
+                            if (statusBadge) statusBadge.innerHTML = '<span style="color:#ef4444;font-weight:600;">✗ Ошибка при тестировании</span>';
+                            if (summary) summary.innerHTML = '<div style="margin-top:14px;padding:12px 16px;background:rgba(239,68,68,0.12);border:1px solid #ef4444;border-radius:8px;color:#fca5a5;font-size:13px;">' +
+                                '<div style="font-weight:600;margin-bottom:4px;">❌ Тестирование завершилось с ошибкой</div>' +
+                                '<div>' + (data.error || "Один из этапов завершился со сбоем") + '</div>' +
+                                '</div>';
+                        }
+                    }
+                } catch(err) {
+                    console.error("SSE parse error", err, e.data);
+                }
+            };
+
+            es.onerror = function(err) {
+                es.close();
+                btn.disabled = false;
+                btn.style.opacity = "1";
+                btn.style.cursor = "pointer";
+                if (spinner) spinner.style.display = "none";
+                if (icon) icon.style.display = "inline-block";
+                if (btnText) btnText.textContent = "Запустить тест повторно";
+                if (statusBadge) statusBadge.innerHTML = '<span style="color:#ef4444;">Ошибка связи при тестировании</span>';
+            };
+        } catch(err) {
+            console.error("EventSource failed", err);
+        }
+    };
+})();
+JS;
+    }
+
+    /**
+     * Get HTML script tag with diagnostic widget JS for PanelsRenderHook::BODY_END.
+     */
+    public static function getWidgetScriptHtml(): string
+    {
+        return '<script>' . self::getWidgetScriptJs() . '</script>';
     }
 
     /**
