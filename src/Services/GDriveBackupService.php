@@ -467,42 +467,57 @@ class GDriveBackupService
      */
     public static function getDiagnosticStepsDefinitions(): array
     {
+        $host = config('gdrive-backup.node_host', '87.228.56.213');
+        $port = config('gdrive-backup.node_port', 228);
+        $user = config('gdrive-backup.node_user', 'root');
+        $remote = config('gdrive-backup.remote', 'gdrive');
+        $folder = config('gdrive-backup.folder', 'TF2_Backups');
+
         return [
             'ssh' => [
                 'title' => trans('gdrive-backup::messages.step_1_title'),
-                'desc' => trans('gdrive-backup::messages.step_1_desc', ['host' => config('gdrive-backup.node_host', '87.228.56.213'), 'port' => config('gdrive-backup.node_port', 228)]),
+                'desc' => trans('gdrive-backup::messages.step_1_desc', ['host' => $host, 'port' => $port]),
+                'success_desc' => trans('gdrive-backup::messages.step_1_success', ['user' => $user, 'host' => $host, 'port' => $port]),
             ],
             'tools' => [
                 'title' => trans('gdrive-backup::messages.step_2_title'),
                 'desc' => trans('gdrive-backup::messages.step_2_desc'),
+                'success_desc' => trans('gdrive-backup::messages.step_2_success'),
             ],
             'auth' => [
                 'title' => trans('gdrive-backup::messages.step_3_title'),
-                'desc' => trans('gdrive-backup::messages.step_3_desc', ['remote' => config('gdrive-backup.remote', 'gdrive')]),
+                'desc' => trans('gdrive-backup::messages.step_3_desc', ['remote' => $remote]),
+                'success_desc' => trans('gdrive-backup::messages.step_3_success', ['remote' => $remote]),
             ],
             'create' => [
                 'title' => trans('gdrive-backup::messages.step_4_title'),
                 'desc' => trans('gdrive-backup::messages.step_4_desc'),
+                'success_desc' => trans('gdrive-backup::messages.step_4_success'),
             ],
             'compress' => [
                 'title' => trans('gdrive-backup::messages.step_5_title'),
                 'desc' => trans('gdrive-backup::messages.step_5_desc'),
+                'success_desc' => trans('gdrive-backup::messages.step_5_success'),
             ],
             'upload' => [
                 'title' => trans('gdrive-backup::messages.step_6_title'),
-                'desc' => trans('gdrive-backup::messages.step_6_desc', ['folder' => config('gdrive-backup.folder', 'TF2_Backups')]),
+                'desc' => trans('gdrive-backup::messages.step_6_desc', ['folder' => $folder]),
+                'success_desc' => trans('gdrive-backup::messages.step_6_success'),
             ],
             'download' => [
                 'title' => trans('gdrive-backup::messages.step_7_title'),
                 'desc' => trans('gdrive-backup::messages.step_7_desc'),
+                'success_desc' => trans('gdrive-backup::messages.step_7_success'),
             ],
             'decompress' => [
                 'title' => trans('gdrive-backup::messages.step_8_title'),
                 'desc' => trans('gdrive-backup::messages.step_8_desc'),
+                'success_desc' => trans('gdrive-backup::messages.step_8_success'),
             ],
             'integrity' => [
                 'title' => trans('gdrive-backup::messages.step_9_title'),
                 'desc' => trans('gdrive-backup::messages.step_9_desc'),
+                'success_desc' => trans('gdrive-backup::messages.step_9_success'),
             ],
         ];
     }
@@ -530,12 +545,14 @@ class GDriveBackupService
                 'total_duration_sec' => 0.0,
             ];
 
+            $stepsDefs = self::getDiagnosticStepsDefinitions();
+
             // 1. SSH Step
             echo "data: " . json_encode([
                 'step' => 'ssh',
                 'state' => 'running',
-                'title' => '1. SSH подключение к игровой ноде',
-                'details' => "Установка соединения с {$this->user}@{$this->host}:{$this->port}...",
+                'title' => $stepsDefs['ssh']['title'],
+                'details' => $stepsDefs['ssh']['desc'],
             ], JSON_UNESCAPED_UNICODE) . "\n\n";
             flush();
 
@@ -544,13 +561,13 @@ class GDriveBackupService
                 $errStep = [
                     'step' => 'ssh',
                     'state' => 'failed',
-                    'title' => '1. SSH подключение к игровой ноде',
-                    'details' => "Не удалось установить SSH-соединение с {$this->user}@{$this->host}:{$this->port}",
+                    'title' => $stepsDefs['ssh']['title'],
+                    'details' => "SSH connection failed: {$this->user}@{$this->host}:{$this->port}",
                     'error' => $sshOutput ?: 'Timeout',
-                    'recommendation' => "Проверьте доступность хоста {$this->host}, порт {$this->port} и ключ {$this->keyPath}.",
+                    'recommendation' => "Check host {$this->host}, port {$this->port}, and SSH key {$this->keyPath}.",
                 ];
                 $fullResult['steps']['ssh'] = ['status' => 'failed', 'title' => $errStep['title'], 'details' => $errStep['details'], 'error' => $errStep['error']];
-                $fullResult['error'] = 'Ошибка SSH подключения к игровой ноде';
+                $fullResult['error'] = $errStep['details'];
                 $fullResult['recommendation'] = $errStep['recommendation'];
                 $fullResult['total_duration_sec'] = round(microtime(true) - $startTime, 2);
 
@@ -563,17 +580,18 @@ class GDriveBackupService
                 return;
             }
 
+            $sshSuccessDetails = $stepsDefs['ssh']['success_desc'];
             $fullResult['steps']['ssh'] = [
                 'status' => 'success',
-                'title' => '1. SSH подключение к игровой ноде',
-                'details' => "Соединение успешно установлено ({$this->user}@{$this->host}:{$this->port})",
+                'title' => $stepsDefs['ssh']['title'],
+                'details' => $sshSuccessDetails,
                 'metric' => 'OK',
             ];
             echo "data: " . json_encode([
                 'step' => 'ssh',
                 'state' => 'success',
-                'title' => '1. SSH подключение к игровой ноде',
-                'details' => "Соединение успешно установлено ({$this->user}@{$this->host}:{$this->port})",
+                'title' => $stepsDefs['ssh']['title'],
+                'details' => $sshSuccessDetails,
                 'metric' => 'OK',
             ], JSON_UNESCAPED_UNICODE) . "\n\n";
             flush();
@@ -585,10 +603,10 @@ class GDriveBackupService
                 echo "data: " . json_encode([
                     'step' => 'tools',
                     'state' => 'failed',
-                    'title' => '2. Запуск скрипта тестирования',
-                    'error' => 'Не удалось запустить процесс SSH на сервере панели',
+                    'title' => $stepsDefs['tools']['title'],
+                    'error' => 'Failed to start SSH process on panel',
                 ], JSON_UNESCAPED_UNICODE) . "\n\n";
-                echo "data: " . json_encode(['done' => true, 'overall_success' => false, 'error' => 'Не удалось запустить процесс SSH'], JSON_UNESCAPED_UNICODE) . "\n\n";
+                echo "data: " . json_encode(['done' => true, 'overall_success' => false, 'error' => 'Failed to start SSH process'], JSON_UNESCAPED_UNICODE) . "\n\n";
                 flush();
                 return;
             }
@@ -603,15 +621,27 @@ class GDriveBackupService
                     $event = json_decode($rawJson, true);
                     if ($event && isset($event['step'])) {
                         $stepName = $event['step'];
+                        if (isset($stepsDefs[$stepName])) {
+                            $event['title'] = $stepsDefs[$stepName]['title'];
+                            if (($event['state'] ?? '') === 'success') {
+                                $metricVal = $event['metric'] ?? '';
+                                $event['details'] = str_replace(
+                                    [':metric', ':host', ':port', ':user', ':remote', ':folder'],
+                                    [$metricVal, $this->host, $this->port, $this->user, $this->remote, $this->folder],
+                                    $stepsDefs[$stepName]['success_desc'] ?? $stepsDefs[$stepName]['desc']
+                                );
+                            }
+                        }
                         if (($event['state'] ?? '') === 'success' || ($event['state'] ?? '') === 'failed') {
                             $fullResult['steps'][$stepName] = [
                                 'status' => $event['state'],
-                                'title' => $event['title'] ?? $stepName,
+                                'title' => $event['title'] ?? ($stepsDefs[$stepName]['title'] ?? $stepName),
                                 'details' => $event['details'] ?? '',
                                 'metric' => $event['metric'] ?? '',
                                 'error' => $event['error'] ?? null,
                             ];
                         }
+                        $rawJson = json_encode($event, JSON_UNESCAPED_UNICODE);
                     }
                     echo "data: " . $rawJson . "\n\n";
                     flush();
@@ -720,9 +750,24 @@ class GDriveBackupService
         foreach ($stepsList as $key => $info) {
             $stepData = $cached['steps'][$key] ?? null;
             $status = $stepData['status'] ?? 'pending';
-            $title = htmlspecialchars($stepData['title'] ?? $info['title']);
-            $details = htmlspecialchars($stepData['details'] ?? $info['desc']);
+            $title = htmlspecialchars($info['title']);
             $metric = isset($stepData['metric']) ? htmlspecialchars($stepData['metric']) : '';
+
+            $details = $info['desc'];
+            if ($status === 'success') {
+                $metricText = $metric;
+                if (trans('gdrive-backup::messages.diag_step_passed') === 'Passed' && str_contains($metricText, 'совпадение')) {
+                    $metricText = str_replace('совпадение', 'match', $metricText);
+                }
+                $metric = $metricText;
+                $details = str_replace(
+                    [':metric', ':host', ':port', ':user', ':remote', ':folder'],
+                    [$metric, $this->host, $this->port, $this->user, $this->remote, $this->folder],
+                    $info['success_desc'] ?? $info['desc']
+                );
+            } elseif ($status === 'failed') {
+                $details = htmlspecialchars($stepData['error'] ?? $stepData['details'] ?? $info['desc']);
+            }
 
             $rowClass = '';
             $iconHtml = '';
@@ -807,25 +852,31 @@ class GDriveBackupService
         if (state === "running") {
             row.classList.add("gdrive-step-running");
             if (iconEl) iconEl.innerHTML = '<div style="min-width:24px;height:24px;border-radius:50%;background:rgba(59,130,246,0.18);color:#60a5fa;display:flex;align-items:center;justify-content:center;"><svg style="width:14px;height:14px;animation:gdrive-spin 0.8s linear infinite;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-opacity="0.25"></circle><path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor"></path></svg></div>';
-            if (descEl) descEl.innerHTML = '<span style="color:#60a5fa;font-weight:500;">' + t('diag_step_running', 'Тестируется...') + '</span>';
-            if (metricEl) metricEl.innerHTML = '<span style="font-family:ui-monospace,monospace;font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(59,130,246,0.15);color:#60a5fa;border:1px solid rgba(59,130,246,0.3);">' + t('diag_step_running', 'В процессе...') + '</span>';
+            if (descEl) descEl.innerHTML = '<span style="color:#60a5fa;font-weight:500;">' + t('diag_step_running', 'Running...') + '</span>';
+            if (metricEl) metricEl.innerHTML = '<span style="font-family:ui-monospace,monospace;font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(59,130,246,0.15);color:#60a5fa;border:1px solid rgba(59,130,246,0.3);">' + t('diag_step_running', 'In progress...') + '</span>';
         } else if (state === "success") {
             row.classList.add("gdrive-step-success");
             if (iconEl) iconEl.innerHTML = '<div style="min-width:24px;height:24px;border-radius:50%;background:rgba(16,185,129,0.18);color:#10b981;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:13px;">✓</div>';
             if (descEl) {
-                descEl.textContent = details || t('diag_step_passed', 'Пройдено успешно');
+                descEl.textContent = details || t('diag_step_passed', 'Passed');
                 descEl.style.color = "#94a3b8";
             }
-            if (metricEl) metricEl.innerHTML = metric ? '<span style="font-family:ui-monospace,monospace;font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(16,185,129,0.12);color:#34d399;border:1px solid rgba(16,185,129,0.25);">' + metric + '</span>' : '';
+            if (metricEl) {
+                var metricText = metric || '';
+                if (t('diag_step_passed', 'Passed') === 'Passed' && metricText.indexOf('совпадение') !== -1) {
+                    metricText = metricText.replace('совпадение', 'match');
+                }
+                metricEl.innerHTML = metricText ? '<span style="font-family:ui-monospace,monospace;font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(16,185,129,0.12);color:#34d399;border:1px solid rgba(16,185,129,0.25);">' + metricText + '</span>' : '';
+            }
         } else if (state === "failed") {
             row.classList.add("gdrive-step-failed");
             if (iconEl) iconEl.innerHTML = '<div style="min-width:24px;height:24px;border-radius:50%;background:rgba(239,68,68,0.18);color:#ef4444;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:13px;">✗</div>';
-            if (descEl) descEl.innerHTML = '<span style="color:#f87171;">' + (details || t('diag_step_failed', 'Ошибка выполнения')) + '</span>';
-            if (metricEl) metricEl.innerHTML = '<span style="font-family:ui-monospace,monospace;font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);">' + t('diag_step_failed', 'Сбой') + '</span>';
+            if (descEl) descEl.innerHTML = '<span style="color:#f87171;">' + (details || t('diag_step_failed', 'Execution failed')) + '</span>';
+            if (metricEl) metricEl.innerHTML = '<span style="font-family:ui-monospace,monospace;font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);">' + t('diag_step_failed', 'Failed') + '</span>';
             if (recommendation) {
                 var recBox = document.getElementById("gdrive-live-recommendation");
                 if (recBox) {
-                    recBox.innerHTML = '<div style="margin-top:12px;padding:12px 14px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:8px;color:#fde68a;font-size:12px;line-height:1.6;"><b style="color:#fbbf24;">💡 ' + (i18n.recommendation_prefix || 'Рекомендация') + ':</b><br>' + recommendation.replace(/\n/g, "<br>") + '</div>';
+                    recBox.innerHTML = '<div style="margin-top:12px;padding:12px 14px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:8px;color:#fde68a;font-size:12px;line-height:1.6;"><b style="color:#fbbf24;">💡 ' + (i18n.recommendation_prefix || 'Recommendation') + ':</b><br>' + recommendation.replace(/\n/g, "<br>") + '</div>';
                 }
             }
         } else {
@@ -854,8 +905,8 @@ class GDriveBackupService
         btn.style.cursor = "not-allowed";
         if (spinner) spinner.style.display = "inline-block";
         if (icon) icon.style.display = "none";
-        if (btnText) btnText.textContent = t('diag_running', 'Тестирование выполняется...');
-        if (statusBadge) statusBadge.innerHTML = '<span style="color:#60a5fa;animation:gdrive-pulse 1.2s infinite;font-weight:600;">⏳ ' + t('diag_running', 'Тестирование...') + '</span>';
+        if (btnText) btnText.textContent = t('diag_running', 'Running diagnostic test...');
+        if (statusBadge) statusBadge.innerHTML = '<span style="color:#60a5fa;animation:gdrive-pulse 1.2s infinite;font-weight:600;">⏳ ' + t('diag_running', 'Running...') + '</span>';
         if (summary) summary.innerHTML = "";
         if (rec) rec.innerHTML = "";
 
@@ -871,6 +922,10 @@ class GDriveBackupService
                 try {
                     var data = JSON.parse(e.data);
                     if (data.step) {
+                        var titleEl = document.getElementById("title-" + data.step);
+                        if (titleEl && data.title) {
+                            titleEl.textContent = data.title;
+                        }
                         window.setGDriveStepState(data.step, data.state, data.details || data.error, data.metric, data.recommendation);
                     }
                     if (data.done) {
@@ -880,19 +935,19 @@ class GDriveBackupService
                         btn.style.cursor = "pointer";
                         if (spinner) spinner.style.display = "none";
                         if (icon) icon.style.display = "inline-block";
-                        if (btnText) btnText.textContent = t('diag_restart_btn', 'Запустить тест повторно');
+                        if (btnText) btnText.textContent = t('diag_restart_btn', 'Rerun Diagnostic Test');
 
                         if (data.overall_success) {
                             var dur = data.duration ? " (" + data.duration + " s)" : "";
-                            if (statusBadge) statusBadge.innerHTML = '<span style="color:#10b981;font-weight:600;">✓ ' + t('diag_step_passed', 'Пройдено') + dur + '</span>';
+                            if (statusBadge) statusBadge.innerHTML = '<span style="color:#10b981;font-weight:600;">✓ ' + t('diag_step_passed', 'Passed') + dur + '</span>';
                             if (summary) summary.innerHTML = '<div style="margin-top:14px;padding:12px 16px;background:rgba(16,185,129,0.12);border:1px solid #10b981;border-radius:8px;color:#34d399;display:flex;align-items:center;gap:10px;font-weight:600;font-size:13px;">' +
                                 '<span style="font-size:18px;">✓</span>' +
                                 '<span>' + (i18n.diag_summary_success ? i18n.diag_summary_success.replace(':sec', data.duration || '') : 'Google Drive is healthy and ready.') + '</span>' +
                                 '</div>';
                         } else {
-                            if (statusBadge) statusBadge.innerHTML = '<span style="color:#ef4444;font-weight:600;">✗ ' + t('diag_step_failed', 'Сбой') + '</span>';
+                            if (statusBadge) statusBadge.innerHTML = '<span style="color:#ef4444;font-weight:600;">✗ ' + t('diag_step_failed', 'Failed') + '</span>';
                             if (summary) summary.innerHTML = '<div style="margin-top:14px;padding:12px 16px;background:rgba(239,68,68,0.12);border:1px solid #ef4444;border-radius:8px;color:#fca5a5;font-size:13px;">' +
-                                '<div style="font-weight:600;margin-bottom:4px;">❌ ' + t('diag_summary_failed', 'Тестирование завершилось с ошибкой') + '</div>' +
+                                '<div style="font-weight:600;margin-bottom:4px;">❌ ' + t('diag_summary_failed', 'Diagnostic test failed') + '</div>' +
                                 '<div>' + (data.error || "Stage failed") + '</div>' +
                                 '</div>';
                         }
@@ -909,8 +964,8 @@ class GDriveBackupService
                 btn.style.cursor = "pointer";
                 if (spinner) spinner.style.display = "none";
                 if (icon) icon.style.display = "inline-block";
-                if (btnText) btnText.textContent = t('diag_restart_btn', 'Запустить тест повторно');
-                if (statusBadge) statusBadge.innerHTML = '<span style="color:#ef4444;">' + t('diag_step_failed', 'Ошибка связи при тестировании') + '</span>';
+                if (btnText) btnText.textContent = t('diag_restart_btn', 'Rerun Diagnostic Test');
+                if (statusBadge) statusBadge.innerHTML = '<span style="color:#ef4444;">' + t('diag_step_failed', 'Connection error during test') + '</span>';
             };
         } catch(err) {
             console.error("EventSource failed", err);
