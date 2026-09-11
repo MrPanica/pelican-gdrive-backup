@@ -35,25 +35,44 @@ A high-performance streamed cloud backup and disaster recovery plugin for **Peli
 
 ---
 
-## 🛠️ Quick Installation
+## 🛠️ Installation & Updates (English)
 
 ### 🚀 1-Click Installation via URL (Recommended)
-In Pelican Admin Panel ➔ **Plugins** ➔ click the **«Import from URL»** button (globe icon):
-```text
-https://github.com/MrPanica/pelican-gdrive-backup/archive/refs/heads/master.zip
-```
-Pelican will automatically download, unpack, and activate the plugin.
+1. In Pelican Admin Panel, navigate to **Plugins** (`/admin/plugins`).
+2. Click the **«Import from URL»** button (globe icon).
+3. Paste the direct `.zip` archive link:
+   ```text
+   https://github.com/MrPanica/pelican-gdrive-backup/archive/refs/heads/master.zip
+   ```
+4. Click **Install**. Pelican Panel will automatically download, unpack, register database migrations, and activate the plugin.
 
 ---
 
-### Manual Installation via CLI
-### 1. Game Node Requirements
+### 🔄 Automatic Updates & One-Click Upgrade
+- **Native Pelican Update Engine**: The plugin includes built-in update checks via `update.json`. When a new release or patch is published on GitHub, Pelican automatically displays an update notification badge and an **«Update»** button in **Admin ➔ Plugins**.
+- **1-Click UI Upgrade**: Simply click **«Update»** in the plugin list to update automatically.
+- **CLI Update**: You can also check and apply updates directly from the server terminal:
+  ```bash
+  cd /var/www/pelican
+  php artisan p:plugin:update pelican-gdrive-backup
+  ```
+
+---
+
+### 🌐 Multi-Language Support (Localization)
+- **Automatic Panel Locale Sync**: Fully localized into **English (`en`)** and **Russian (`ru`)**.
+- The interface automatically adapts to whatever language is configured in your Pelican Panel user profile or system settings (`app()->getLocale()`). No browser sniffing or manual toggles required.
+
+---
+
+### 💻 Manual Installation via CLI
+#### 1. Game Node Requirements
 On the target game node, install the required utilities:
 ```bash
 apt update && apt install -y rclone zstd tar jq coreutils
 ```
 
-### 2. Install Plugin in Pelican Panel
+#### 2. Install Plugin in Pelican Panel
 ```bash
 cd /var/www/pelican/plugins
 git clone https://github.com/MrPanica/pelican-gdrive-backup.git
@@ -185,6 +204,54 @@ A browser window will automatically open:
    - Снимки всей операционной системы ноды (`/etc`, конфигурации, сервисы) в разделе админки `Бэкапы всей системы`.
 6. **Автоматическое резервное копирование по расписанию (Cron)**:
    - Ежедневное резервное копирование серверов и системы с автоматической ротацией устаревших архивов (по умолчанию 14 дней).
+
+---
+
+## 🚀 Установка и автоматическое обновление
+
+### ⚡ Установка в 1 клик по ссылке (Рекомендуется)
+1. В панели управления Pelican откройте **Админка ➔ Плагины** (`/admin/plugins`).
+2. Нажмите кнопку **«Импорт по URL»** (иконка глобуса или кнопка «Import»).
+3. Вставьте прямую ссылку на архив `.zip`:
+   ```text
+   https://github.com/MrPanica/pelican-gdrive-backup/archive/refs/heads/master.zip
+   ```
+4. Нажмите кнопку **Установить (Install)**. Панель Pelican автоматически загрузит архив, распакует плагин, выполнит миграции базы данных и активирует его.
+
+---
+
+### 🔄 Автоматические обновления
+- **Встроенная система обновлений Pelican**: Плагин полностью поддерживает нативный механизм обновлений Pelican через манифест `update.json`. При появлении новой версии или патча в репозитории GitHub в списке плагинов панели автоматически появится плашка с уведомлением и кнопка **«Обновить»**.
+- **Обновление в 1 клик через браузер**: Нажмите кнопку **«Обновить»** рядом с плагином в панели управления.
+- **Обновление через консоль сервера (CLI)**:
+  ```bash
+  cd /var/www/pelican
+  php artisan p:plugin:update pelican-gdrive-backup
+  ```
+
+---
+
+### 🌐 Поддержка языков (Локализация)
+- **Полная двуязычность**: Плагин поддерживает **Русский (`ru`)** и **Английский (`en`)** языки.
+- **Автоматическая синхронизация**: Язык интерфейса на лету подтягивается из текущих системных настроек панели Pelican (`app()->getLocale()`). Не требуется ручных переключателей или настроек браузера.
+
+---
+
+### 💻 Ручная установка через консоль (CLI)
+```bash
+# 1. Установка утилит на игровой ноде
+apt update && apt install -y rclone zstd tar jq coreutils
+
+# 2. Установка плагина в директорию Pelican
+cd /var/www/pelican/plugins
+git clone https://github.com/MrPanica/pelican-gdrive-backup.git
+
+# 3. Назначение прав и сброс кеша
+chown -R www-data:www-data /var/www/pelican/plugins/pelican-gdrive-backup
+cd /var/www/pelican
+php artisan optimize:clear
+php artisan filament:optimize-clear
+```
 
 ---
 
