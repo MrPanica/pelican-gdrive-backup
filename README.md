@@ -6,6 +6,25 @@ A high-performance streamed cloud backup and disaster recovery plugin for **Peli
 
 ---
 
+## 📸 Screenshots / Скриншоты
+
+### Server Backups Dashboard & Google Drive Storage / Управление бэкапами сервера
+![Google Drive Backup — Server Backups List](screenshots/01_gdrive_backup_list.png)
+*Dedicated server backups view with Google Drive storage target, lock protection, exact creation timestamps, and 1-click restore/download.*  
+*Таблица бэкапов сервера в облаке Google Drive с защитой от удаления, точными датами создания и скачиванием в 1 клик.*
+
+> [!NOTE]
+> **Dashboard Layout Notice / Оформление страницы сервера:**  
+> The compact server topbar navigation, quick server switcher, map badge, and system stats shown in the header are provided by the [**Pelican Server Layout Pro**](https://github.com/MrPanica/pelican-server-layout-pro) plugin.  
+> *Компактная шапка навигации сервера, быстрый переключатель серверов, бейдж карты и системные показатели в шапке обеспечиваются плагином [**Pelican Server Layout Pro**](https://github.com/MrPanica/pelican-server-layout-pro).*
+
+### 9-Stage Real-Time Diagnostic & Integrity Modal / Модальное окно сквозного тестирования
+![Google Drive Backup — Diagnostic Modal](screenshots/02_gdrive_backup_diagnostic_modal.png)
+*Live Server-Sent Events (SSE) diagnostic widget verifying SSH connectivity, node utilities, OAuth token, upload/download speed, and 100% SHA-256 bitwise archive integrity.*  
+*Интерактивное тестирование всех 9 этапов: SSH, утилиты, авторизация Google OAuth, скорость передачи и побитовая проверка контрольной суммы SHA-256.*
+
+---
+
 ## ✨ Key Features (English)
 
 - **🚀 Zero-Disk-Footprint Direct Streaming**:
