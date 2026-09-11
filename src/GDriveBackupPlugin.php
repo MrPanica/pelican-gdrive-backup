@@ -296,8 +296,6 @@ class GDriveBackupPlugin implements Plugin, HasPluginSettings
     public function getSettingsForm(): array
     {
         return [
-            Section::make('Проверка и тестирование Google Диска')
-        return [
             Section::make(trans('gdrive-backup::messages.settings_diag_section'))
                 ->description(trans('gdrive-backup::messages.settings_diag_desc'))
                 ->schema([
